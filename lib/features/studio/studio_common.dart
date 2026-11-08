@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import '../../l10n/strings.dart';
 import '../../l10n/studio_strings.dart';
 import '../../studio/studio_errors.dart';
 import '../../studio/studio_service.dart';
+import '../../studio/editor/edit_project.dart';
 import '../../studio/templates/templates.dart';
 import '../../studio/video/video_project.dart';
 
@@ -27,7 +29,46 @@ class StudioUiState extends ChangeNotifier {
   TemplateData template = const TemplateData(kind: TemplateKind.quote);
   String? lastTemplate;
 
-  /// Asks the Studio screen to switch tab (0 image, 1 templates, 2 video).
+  /// Video editor project (loaded once from disk, saved shortly after each change).
+  EditProject edit = const EditProject();
+  bool editLoaded = false;
+  String? lastEdit;
+  String? editPreview;
+  Future<void> Function(EditProject p)? editSaver;
+  Timer? _editSave;
+
+  void loadEdit(EditProject p) {
+    edit = p;
+    editLoaded = true;
+    notifyListeners();
+  }
+
+  void setEdit(EditProject p) {
+    edit = p;
+    editPreview = null;
+    notifyListeners();
+    _editSave?.cancel();
+    final saver = editSaver;
+    if (saver != null) _editSave = Timer(const Duration(milliseconds: 600), () => saver(edit));
+  }
+
+  void setLastEdit(String? path) {
+    lastEdit = path;
+    notifyListeners();
+  }
+
+  void setEditPreview(String? path) {
+    editPreview = path;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _editSave?.cancel();
+    super.dispose();
+  }
+
+  /// Asks the Studio screen to switch tab (0 image, 1 templates, 2 video, 3 editor).
   final ValueNotifier<int?> tabRequest = ValueNotifier(null);
 
   void setProject(VideoProject p) {

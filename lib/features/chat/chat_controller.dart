@@ -9,6 +9,7 @@ import '../../agent/tool_call_parser.dart';
 import '../../agent/studio_tools.dart';
 import '../../agent/tools.dart';
 import '../../app/services.dart';
+import '../../billing/billing.dart';
 import '../../data/repositories.dart';
 import '../../llm/llm_backend.dart';
 import '../../skills/skill.dart';
@@ -93,9 +94,11 @@ class ChatController extends ChangeNotifier {
       .map((m) => ChatMessage(m.role, m.content))
       .toList();
 
-  Future<void> send(String text) async {
+  /// Sends [text]. False when it was not sent (no model, or the reply could not be paid for);
+  /// [errorCode] then says why.
+  Future<bool> send(String text) async {
     final input = text.trim();
-    if (input.isEmpty || running) return;
+    if (input.isEmpty || running) return false;
     errorCode = null;
 
     final backend = await _services.resolveBackend();
@@ -104,26 +107,50 @@ class ChatController extends ChangeNotifier {
       if (err != null) {
         errorCode = err;
         _notify();
-        return;
+        return false;
       }
     }
 
-    var convId = conversationId;
-    if (convId == null) {
-      final title = input.length > 40 ? '${input.substring(0, 40)}…' : input;
-      convId = await _services.chats.createConversation(title);
-      conversationId = convId;
+    // One paid AI text generation per reply (first use free; owner free). Never throws.
+    final BillingResult<PaidCharge> started = await _services.billing.gate.begin(PaidFeature.aiText);
+    final PaidCharge charge;
+    switch (started) {
+      case Ok(:final value):
+        charge = value;
+      case Err(:final error):
+        errorCode = 'billing_${error.code.key}';
+        _notify();
+        return false;
     }
-    final history = _history();
-    messages = [
-      ...messages,
-      await _services.chats.addMessage(StoredMessage(
-        conversationId: convId,
-        role: 'user',
-        content: input,
-        createdAt: DateTime.now(),
-      )),
-    ];
+    var produced = false;
+
+    int convId;
+    final List<ChatMessage> history;
+    try {
+      final existing = conversationId;
+      if (existing != null) {
+        convId = existing;
+      } else {
+        final title = input.length > 40 ? '${input.substring(0, 40)}…' : input;
+        convId = await _services.chats.createConversation(title);
+        conversationId = convId;
+      }
+      history = _history();
+      messages = [
+        ...messages,
+        await _services.chats.addMessage(StoredMessage(
+          conversationId: convId,
+          role: 'user',
+          content: input,
+          createdAt: DateTime.now(),
+        )),
+      ];
+    } on Object {
+      await _services.billing.gate.release(charge);
+      errorCode = 'generate_failed';
+      _notify();
+      return false;
+    }
 
     running = true;
     liveText = '';
@@ -186,6 +213,7 @@ class ChatController extends ChangeNotifier {
             final cancelled = _cancel?.isCancelled ?? false;
             final finalText = text.isEmpty && cancelled ? '' : text;
             if (finalText.isNotEmpty) {
+              produced = true;
               messages = [
                 ...messages,
                 await _services.chats.addMessage(StoredMessage(
@@ -201,7 +229,16 @@ class ChatController extends ChangeNotifier {
         }
         _notify();
       }
+    } on Object catch (e) {
+      if (kDebugMode) debugPrint('chat error: $e');
+      errorCode ??= 'generate_failed';
     } finally {
+      if (produced) {
+        await _services.billing.gate.commit(charge);
+      } else {
+        await _services.billing.gate.release(charge);
+      }
+      _services.billing.refreshUi();
       running = false;
       liveText = '';
       liveIsTool = false;
@@ -210,6 +247,7 @@ class ChatController extends ChangeNotifier {
       conversations = await _services.chats.conversations();
       _notify();
     }
+    return true;
   }
 
   Future<void> saveToDrafts(String content) async {

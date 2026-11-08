@@ -313,7 +313,14 @@ String studioErrorKey(String code) => switch (code) {
       'missing_image' ||
       'process_died' ||
       'no_topic' ||
-      'render_failed' =>
+      'render_failed' ||
+      'no_clips' ||
+      'missing_media' ||
+      'unsupported_media' ||
+      'import_failed' ||
+      'missing_music' ||
+      'bad_image' ||
+      'too_large' =>
         'studioErr_$code',
       _ => 'studioErr_generic',
     };

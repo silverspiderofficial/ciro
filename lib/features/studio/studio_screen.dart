@@ -5,13 +5,14 @@ import '../../l10n/strings.dart';
 import '../../studio/studio_service.dart';
 import '../caption/caption_screen.dart';
 import '../drafts/drafts_screen.dart';
+import 'editor_tab.dart';
 import 'image_tab.dart';
 import 'studio_assets_screen.dart';
 import 'studio_common.dart';
 import 'templates_tab.dart';
 import 'video_tab.dart';
 
-/// The Studio tab: image generation, templates and the video timeline.
+/// The Studio tab: image generation, templates, the video timeline and the video editor.
 class StudioScreen extends StatefulWidget {
   const StudioScreen({super.key});
 
@@ -20,7 +21,7 @@ class StudioScreen extends StatefulWidget {
 }
 
 class _StudioScreenState extends State<StudioScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  late final TabController _tabs = TabController(length: 4, vsync: this);
   StudioUiState? _ui;
 
   @override
@@ -69,6 +70,7 @@ class _StudioScreenState extends State<StudioScreen> with SingleTickerProviderSt
             Tab(icon: const Icon(Icons.auto_awesome_outlined), text: s.t('studioTabImage')),
             Tab(icon: const Icon(Icons.dashboard_customize_outlined), text: s.t('studioTabTemplates')),
             Tab(icon: const Icon(Icons.movie_outlined), text: s.t('studioTabVideo')),
+            Tab(icon: const Icon(Icons.video_settings_outlined), text: s.t('studioTabEditor')),
           ],
         ),
       ),
@@ -80,7 +82,7 @@ class _StudioScreenState extends State<StudioScreen> with SingleTickerProviderSt
                 Expanded(
                   child: TabBarView(
                     controller: _tabs,
-                    children: const [ImageTab(), TemplatesTab(), VideoTab()],
+                    children: const [ImageTab(), TemplatesTab(), VideoTab(), EditorTab()],
                   ),
                 ),
               ],

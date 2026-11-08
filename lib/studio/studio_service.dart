@@ -8,7 +8,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show PlatformException, rootBundle;
 import 'package:path/path.dart' as p;
 
 import '../billing/billing.dart';
@@ -420,6 +420,8 @@ class StudioService extends ChangeNotifier {
     final List<String> files;
     try {
       files = await platform.pickMedia((await _editorMediaDir()).path);
+    } on PlatformException catch (e) {
+      throw StudioException(e.code == 'too_large' ? 'too_large' : 'import_failed');
     } on Object {
       throw const StudioException('import_failed');
     }
@@ -464,6 +466,8 @@ class StudioService extends ChangeNotifier {
     try {
       final files = await platform.pickMedia((await _editorMediaDir()).path, audio: true);
       return files.isEmpty ? null : files.first;
+    } on PlatformException catch (e) {
+      throw StudioException(e.code == 'too_large' ? 'too_large' : 'import_failed');
     } on Object {
       throw const StudioException('import_failed');
     }

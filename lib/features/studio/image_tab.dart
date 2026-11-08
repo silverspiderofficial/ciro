@@ -9,6 +9,9 @@ import '../../studio/studio_assets.dart';
 import '../../studio/studio_catalog.dart';
 import '../../studio/studio_errors.dart';
 import '../../studio/studio_service.dart';
+import '../../billing/billing.dart';
+import '../billing/billing_controller.dart';
+import '../billing/paid_ui.dart';
 import 'studio_assets_screen.dart';
 import 'studio_common.dart';
 
@@ -70,6 +73,7 @@ class _ImageTabState extends State<ImageTab> {
     final ui = context.read<StudioUiState>();
     var prompt = _prompt.text.trim();
     if (prompt.isEmpty) return;
+    if (!await prepareToPay(context, studio.quote(PaidFeature.image), confirm: false) || !mounted) return;
     if (containsPersian(prompt)) {
       setState(() => _writingPrompt = true);
       try {
@@ -112,6 +116,7 @@ class _ImageTabState extends State<ImageTab> {
     final studio = context.watch<StudioService>();
     context.watch<StudioAssetManager>();
     final ui = context.watch<StudioUiState>();
+    context.watch<BillingController>();
     final model = studio.imageModel;
     final blocker = studio.imageBlocker;
     final theme = Theme.of(context);
@@ -170,6 +175,8 @@ class _ImageTabState extends State<ImageTab> {
             ],
           ),
           const SizedBox(height: 8),
+          Center(child: PriceLine(quote: studio.quote(PaidFeature.image), labelKey: 'pricePerImage')),
+          const SizedBox(height: 6),
           FilledButton.icon(
             onPressed: studio.busy || blocker != ImageGenBlocker.none || _writingPrompt ? null : _generate,
             icon: const Icon(Icons.auto_awesome),

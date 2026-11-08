@@ -6,6 +6,7 @@ import '../../core/format.dart';
 import '../../data/model_manager.dart';
 import '../../data/settings.dart';
 import '../../l10n/strings.dart';
+import '../../l10n/studio_strings.dart';
 import '../../llm/local_backend.dart';
 import '../models/model_manager_screen.dart';
 
@@ -17,6 +18,7 @@ String errorMessage(S s, String code, {LocalEngine? engine}) {
       'need': formatBytes(engine.lowRamNeed ?? 0, languageCode: s.languageCode),
     });
   }
+  if (code.startsWith('billing_')) return s.t(studioErrorKey(code));
   if (code.startsWith('http_') || code == 'api_error') return s.t('errGeneric', {'code': code});
   return s.t(S.errorKey(code), {'code': code});
 }

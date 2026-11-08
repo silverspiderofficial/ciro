@@ -13,6 +13,9 @@ import '../../studio/templates/templates.dart';
 import '../../studio/video/timeline.dart';
 import '../../studio/video/video_project.dart';
 import '../../studio/video/video_renderer.dart';
+import '../../billing/billing.dart';
+import '../billing/billing_controller.dart';
+import '../billing/paid_ui.dart';
 import 'paid_video_card.dart';
 import 'studio_assets_screen.dart';
 import 'studio_common.dart';
@@ -109,13 +112,15 @@ class VideoTab extends StatelessWidget {
       project,
       project.scenes.map((x) => estimateReadingSeconds(x.narration)).toList(),
     ).totalSeconds;
+    context.watch<BillingController>();
+    final quote = studio.quote(PaidFeature.scenesVideo, duration: StudioService.estimateScenesDuration(project));
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         const PaidVideoCard(),
         const SizedBox(height: 16),
-        Text(s.t('paidManualTitle'), style: Theme.of(context).textTheme.titleMedium),
+        Text(s.t('paidManualTitle2'), style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Card(
           child: Padding(
@@ -190,6 +195,8 @@ class VideoTab extends StatelessWidget {
         const SizedBox(height: 8),
         OutlinedButton.icon(onPressed: () => _addScene(context), icon: const Icon(Icons.add_photo_alternate_outlined), label: Text(s.t('vidAddScene'))),
         const SizedBox(height: 12),
+        if (project.scenes.isNotEmpty) Center(child: PriceLine(quote: quote, labelKey: 'priceThisVideo')),
+        const SizedBox(height: 6),
         FilledButton.icon(
           icon: const Icon(Icons.movie_outlined),
           label: Text(s.t('vidRender')),
@@ -197,6 +204,7 @@ class VideoTab extends StatelessWidget {
               ? null
               : () async {
                   final messenger = ScaffoldMessenger.of(context);
+                  if (!await prepareToPay(context, quote) || !context.mounted) return;
                   final path = await runStudio(context, () => studio.renderVideo(project));
                   if (path == null) return;
                   ui.setLastVideo(path);

@@ -133,27 +133,42 @@ class _PaySheetState extends State<_PaySheet> {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              icon: const Icon(Icons.account_balance_wallet_outlined),
-              label: Text(s.t('billOpenWallet')),
-              onPressed: () async {
-                final ok = await openWallet(links);
-                if (!ok) _say(s.t('billNoWallet'));
-              },
-            ),
-            const SizedBox(height: 12),
-            Text(s.t('billScanQr'), textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Center(
-              child: Container(
-                color: Colors.white,
-                padding: const EdgeInsets.all(8),
-                child: QrImageView(data: links.qrData, size: 200, backgroundColor: Colors.white),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 56,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.account_balance_wallet_outlined),
+                label: Text(s.t('billPayWallet'), style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.onPrimary)),
+                onPressed: () async {
+                  final ok = await openWallet(links);
+                  if (!ok) _say(s.t('billNoWallet'));
+                },
               ),
             ),
-            copyRow(s.t('billComment'), links.comment, note: s.t('billCommentNote')),
-            copyRow(s.t('billAddress'), svc.receiveAddress),
+            const SizedBox(height: 6),
+            Text(s.t('billPayWalletNote'), textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+            const SizedBox(height: 8),
+            Card(
+              margin: EdgeInsets.zero,
+              child: ExpansionTile(
+                leading: const Icon(Icons.qr_code_2),
+                title: Text(s.t('billManual')),
+                childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                children: [
+                  Text(s.t('billScanQr'), textAlign: TextAlign.center),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.all(8),
+                      child: QrImageView(data: links.qrData, size: 200, backgroundColor: Colors.white),
+                    ),
+                  ),
+                  copyRow(s.t('billComment'), links.comment, note: s.t('billCommentNote')),
+                  copyRow(s.t('billAddress'), svc.receiveAddress),
+                ],
+              ),
+            ),
             const SizedBox(height: 12),
             FilledButton.tonalIcon(
               icon: billing.checking

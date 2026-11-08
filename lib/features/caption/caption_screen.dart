@@ -12,6 +12,9 @@ import '../../l10n/strings.dart';
 import '../../llm/llm_backend.dart';
 import '../../llm/local_backend.dart';
 import '../../skills/skill_repository.dart';
+import '../../billing/billing.dart';
+import '../billing/billing_controller.dart';
+import '../billing/paid_ui.dart';
 import '../common/engine_banner.dart';
 
 /// Topic → Persian / English caption + hashtag sets (max 5 each), all copyable.
@@ -55,6 +58,8 @@ class _CaptionScreenState extends State<CaptionScreen> {
     }
     final services = context.read<AppServices>();
     final skill = context.read<SkillRepository>().byId(_skillId);
+    final billing = context.read<BillingController>();
+    if (!await prepareToPay(context, billing.quote(PaidFeature.aiText), confirm: false) || !mounted) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -77,6 +82,23 @@ class _CaptionScreenState extends State<CaptionScreen> {
     }
     final cancel = _cancel = CancelToken();
     final gen = ContentGenerator(backend, options: services.generationOptions);
+    // One paid AI text generation per tap (first use free; owner free).
+    final started = await billing.gate.begin(PaidFeature.aiText);
+    final PaidCharge charge;
+    switch (started) {
+      case Ok(:final value):
+        charge = value;
+      case Err(:final error):
+        if (mounted) {
+          setState(() {
+            _busy = false;
+            _error = s.t(billingErrorKey(error.code));
+          });
+        }
+        _cancel = null;
+        return;
+    }
+    var produced = false;
     try {
       if (_language == 'fa' || _language == 'both') {
         final c = await gen.writeCaption(topic: topic, language: 'fa', tone: skill?.tone ?? '', skill: skill, cancel: cancel);
@@ -90,9 +112,19 @@ class _CaptionScreenState extends State<CaptionScreen> {
       if (cancel.isCancelled) return;
       final tags = await gen.hashtags(topic: topic, language: _language, skill: skill, cancel: cancel);
       if (mounted) setState(() => _sets = HashtagHelper.buildSets(tags));
+      produced = true;
     } on LlmException catch (e) {
       if (mounted && !cancel.isCancelled) setState(() => _error = errorMessage(s, e.code, engine: services.engine));
+    } on Object {
+      if (mounted && !cancel.isCancelled) setState(() => _error = errorMessage(s, 'generate_failed', engine: services.engine));
     } finally {
+      // A caption that was written counts even if the hashtags were stopped.
+      if (produced || _captionFa != null || _captionEn != null) {
+        await billing.gate.commit(charge);
+      } else {
+        await billing.gate.release(charge);
+      }
+      billing.refreshUi();
       if (mounted) setState(() => _busy = false);
       _cancel = null;
     }
@@ -179,6 +211,8 @@ class _CaptionScreenState extends State<CaptionScreen> {
                     ],
                   ],
                 ),
+                const SizedBox(height: 6),
+                Center(child: PriceLine(quote: context.watch<BillingController>().quote(PaidFeature.aiText), labelKey: 'pricePerGen')),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),

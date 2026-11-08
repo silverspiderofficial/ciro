@@ -172,6 +172,8 @@ class SettingsScreen extends StatelessWidget {
           ),
           section('billSection'),
           const CreditTiles(),
+          section('ownerSection'),
+          const OwnerAccessTile(),
           section('secData'),
           ListTile(
             leading: const Icon(Icons.drafts_outlined),

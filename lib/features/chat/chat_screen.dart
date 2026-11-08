@@ -4,6 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../billing/billing.dart';
+import '../billing/billing_controller.dart';
+import '../billing/paid_ui.dart';
+import '../billing/pay_sheet.dart';
+
 import '../../app/services.dart';
 import '../../data/repositories.dart';
 import '../../l10n/strings.dart';
@@ -44,11 +49,13 @@ class _ChatViewState extends State<_ChatView> {
     super.dispose();
   }
 
-  void _send(ChatController chat) {
+  Future<void> _send(ChatController chat) async {
     final text = _input.text;
     if (text.trim().isEmpty) return;
     _input.clear();
-    chat.send(text);
+    final sent = await chat.send(text);
+    // Not sent (e.g. not enough credit): give the text back so nothing is lost.
+    if (!sent && mounted && _input.text.isEmpty) _input.text = text;
   }
 
   @override
@@ -58,6 +65,7 @@ class _ChatViewState extends State<_ChatView> {
     final engine = context.watch<LocalEngine>();
     context.watch<SkillRepository>();
     final skill = chat.activeSkill;
+    final billing = context.watch<BillingController>();
 
     return Scaffold(
       appBar: AppBar(
@@ -98,7 +106,12 @@ class _ChatViewState extends State<_ChatView> {
                 title: Text(errorMessage(s, chat.errorCode!, engine: engine)),
                 trailing: chat.errorCode == 'process_died' || chat.errorCode == 'not_loaded'
                     ? TextButton(onPressed: () => loadActiveModel(context), child: Text(s.t('loadModel')))
-                    : null,
+                    : chat.errorCode == 'billing_insufficientFunds'
+                        ? TextButton(
+                            onPressed: () => showPaySheet(context, nanotons: billing.quote(PaidFeature.aiText).listPrice ?? 0),
+                            child: Text(s.t('billAddCreditShort')),
+                          )
+                        : null,
               ),
             ),
           SafeArea(
@@ -108,10 +121,17 @@ class _ChatViewState extends State<_ChatView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ActionChip(
-                    avatar: const Icon(Icons.psychology_outlined, size: 18),
-                    label: Text(skill == null ? s.t('noSkill') : s.t('activeSkill', {'name': skill.name})),
-                    onPressed: chat.running ? null : () => _pickSkill(context, chat),
+                  Wrap(
+                    spacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.psychology_outlined, size: 18),
+                        label: Text(skill == null ? s.t('noSkill') : s.t('activeSkill', {'name': skill.name})),
+                        onPressed: chat.running ? null : () => _pickSkill(context, chat),
+                      ),
+                      PriceLine(quote: billing.quote(PaidFeature.aiText), labelKey: 'pricePerReply'),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Row(

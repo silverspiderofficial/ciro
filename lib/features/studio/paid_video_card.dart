@@ -10,6 +10,7 @@ import '../../core/format.dart';
 import '../../l10n/strings.dart';
 import '../../studio/studio_service.dart';
 import '../billing/billing_controller.dart';
+import '../billing/paid_ui.dart';
 import '../billing/pay_sheet.dart';
 import 'studio_assets_screen.dart';
 import 'studio_common.dart';
@@ -48,33 +49,15 @@ class _PaidVideoCardState extends State<PaidVideoCard> {
 
   Future<void> _make(PriceTier tier) async {
     final s = context.sRead;
-    final lang = s.languageCode;
-    final billing = context.read<BillingController>();
     final studio = context.read<StudioService>();
     final ui = context.read<StudioUiState>();
     final messenger = ScaffoldMessenger.of(context);
-    final ton = localizeDigits(tier.tonText, lang);
     if (_topic.text.trim().isEmpty) {
       messenger.showSnackBar(SnackBar(content: Text(s.t('studioErr_no_topic'))));
       return;
     }
-    if (billing.balance.available < tier.nanotons) {
-      messenger.showSnackBar(SnackBar(content: Text(s.t('billShort', {'ton': ton}))));
-      await showPaySheet(context, nanotons: tier.nanotons);
-      return;
-    }
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(s.t('paidConfirmTitle')),
-        content: Text('${s.t('paidConfirmBody', {'ton': ton})}\n\n${s.t('paidLongNote')}'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(s.t('cancel'))),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(s.t('paidConfirmGo'))),
-        ],
-      ),
-    );
-    if (go != true || !mounted) return;
+    final q = studio.quote(PaidFeature.topicVideo, duration: tier.duration);
+    if (!await prepareToPay(context, q, extraNote: s.t('paidLongNote')) || !mounted) return;
     final project = ui.project;
     final path = await runStudio(
       context,
@@ -99,18 +82,15 @@ class _PaidVideoCardState extends State<PaidVideoCard> {
     final studio = context.watch<StudioService>();
     final svc = billing.service;
 
-    if (svc == null) {
+    if (!billing.usable) {
       return Card(
-        child: ListTile(
-          leading: const Icon(Icons.info_outline),
-          title: Text(s.t('paidTitle')),
-          subtitle: Text(s.t('billUnavailable')),
-        ),
+        child: ListTile(leading: const Icon(Icons.info_outline), title: Text(s.t('paidTitle')), subtitle: Text(s.t('billUnavailable'))),
       );
     }
 
-    final tiers = svc.prices.tiers;
-    final tier = svc.priceFor(_duration) ?? tiers.first;
+    final tiers = studio.pricing.videoTable.tiers;
+    final tier = studio.pricing.videoTable.tierFor(_duration) ?? tiers.first;
+    final quote = studio.quote(PaidFeature.topicVideo, duration: tier.duration);
     final balance = billing.balance;
     final blocker = studio.paidVideoBlocker;
 
@@ -139,45 +119,54 @@ class _PaidVideoCardState extends State<PaidVideoCard> {
               children: [
                 for (final t in tiers)
                   ChoiceChip(
-                    label: Text(s.t('paidTier', {
-                      'd': durationLabel(s, t.duration),
-                      'ton': localizeDigits(t.tonText, lang),
-                      'n': localizeDigits('${t.segments}', lang),
-                    })),
+                    label: Text(
+                      s.t('paidTier', {
+                        'd': durationLabel(s, t.duration),
+                        'ton': localizeDigits(t.tonText, lang),
+                        'n': localizeDigits('${t.segments}', lang),
+                      }),
+                    ),
                     selected: t.duration == tier.duration,
                     onSelected: (_) => setState(() => _duration = t.duration),
                   ),
               ],
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(Icons.account_balance_wallet_outlined, size: 20),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text.rich(TextSpan(children: [
-                    TextSpan(
-                      text: s.t('billBalance', {'ton': localizeDigits(formatNanotons(balance.available), lang)}),
-                      style: theme.textTheme.titleSmall,
+            const SizedBox(height: 8),
+            PriceLine(quote: quote, labelKey: 'priceThisVideo'),
+            const SizedBox(height: 8),
+            if (svc != null)
+              Row(
+                children: [
+                  const Icon(Icons.account_balance_wallet_outlined, size: 20),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: s.t('billBalance', {'ton': localizeDigits(formatNanotons(balance.available), lang)}),
+                            style: theme.textTheme.titleSmall,
+                          ),
+                          if (balance.reserved > 0)
+                            TextSpan(text: ' ${s.t('billReserved', {'ton': localizeDigits(formatNanotons(balance.reserved), lang)})}'),
+                        ],
+                      ),
                     ),
-                    if (balance.reserved > 0)
-                      TextSpan(text: ' ${s.t('billReserved', {'ton': localizeDigits(formatNanotons(balance.reserved), lang)})}'),
-                  ])),
-                ),
-                IconButton(
-                  tooltip: s.t('billCheck'),
-                  icon: billing.checking
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.refresh),
-                  onPressed: billing.checking
-                      ? null
-                      : () async {
-                          final r = await billing.checkPayments();
-                          if (context.mounted) showCheckResult(context, r, billing);
-                        },
-                ),
-              ],
-            ),
+                  ),
+                  IconButton(
+                    tooltip: s.t('billCheck'),
+                    icon: billing.checking
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.refresh),
+                    onPressed: billing.checking
+                        ? null
+                        : () async {
+                            final r = await billing.checkPayments();
+                            if (context.mounted) showCheckResult(context, r, billing);
+                          },
+                  ),
+                ],
+              ),
             if (blocker == 'no_model') ...[
               Text(s.t('paidNeedModel'), style: TextStyle(color: theme.colorScheme.error)),
               TextButton.icon(
@@ -190,18 +179,20 @@ class _PaidVideoCardState extends State<PaidVideoCard> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.add_card_outlined),
-                    label: Text(s.t('billAddCredit')),
-                    onPressed: () => showPaySheet(context, nanotons: tier.nanotons),
+                if (svc != null && !billing.ownerUnlocked) ...[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.add_card_outlined),
+                      label: Text(s.t('billAddCredit')),
+                      onPressed: () => showPaySheet(context, nanotons: tier.nanotons),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: FilledButton.icon(
                     icon: const Icon(Icons.auto_awesome),
-                    label: Text(s.t('paidMake', {'ton': localizeDigits(tier.tonText, lang)})),
+                    label: Text(quote.charge == 0 ? s.t('paidConfirmGo') : s.t('paidMake', {'ton': localizeDigits(tier.tonText, lang)})),
                     onPressed: studio.busy || blocker != null ? null : () => _make(tier),
                   ),
                 ),

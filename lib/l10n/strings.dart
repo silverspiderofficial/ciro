@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../data/settings.dart';
 import 'billing_strings.dart';
+import 'editor_strings.dart';
 import 'studio_strings.dart';
 
 /// App strings in Persian (default) and English. Keys are checked by test/l10n_test.dart.
@@ -284,6 +285,7 @@ class S {
     'version': 'نسخه {version}',
     ...studioFa,
     ...billingFa,
+    ...editorFa,
   };
 
   static const Map<String, String> en = {
@@ -541,6 +543,7 @@ class S {
     'version': 'Version {version}',
     ...studioEn,
     ...billingEn,
+    ...editorEn,
   };
 
   /// Maps an LlmException / native error code to a message key.

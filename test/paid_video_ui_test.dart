@@ -26,7 +26,7 @@ import 'studio_fakes.dart';
 Future<(SettingsController, StudioService, BillingController)> _setup({String lang = 'fa'}) async {
   SharedPreferences.setMockInitialValues({'onboardingDone': true, 'languageCode': lang});
   final settings = await SettingsController.load();
-  final studio = await fakeStudio(settings: settings, bridge: FakeBridge(), drafts: MemoryRepository());
+  final studio = await fakeStudio(settings: settings, bridge: FakeBridge(), drafts: MemoryRepository(), owner: false);
   final dir = await Directory.systemTemp.createTemp('kiro_paid_ui');
   final ex = FakeExplorer(testPaymentId);
   final svc = (await BillingService.open(
@@ -37,8 +37,8 @@ Future<(SettingsController, StudioService, BillingController)> _setup({String la
   ))
       .valueOrNull!;
   await svc.restoreFromRecoveryCode(testRecovery);
-  studio.billing = svc;
-  final billing = BillingController(svc);
+  await svc.markFreeUsedForTest(PaidFeature.topicVideo);
+  final billing = BillingController(svc, gate: studio.gate);
   await billing.checkPayments(); // so the screen's own quiet check is skipped
   return (settings, studio, billing);
 }
@@ -81,21 +81,30 @@ void main() {
     await tester.tap(find.text('افزایش اعتبار'));
     await tester.pumpAndSettle();
     expect(find.text(paymentNoticeFa), findsOneWidget);
+    // One big wallet button; the comment and QR stay under the collapsed manual section.
+    expect(find.text('پرداخت با کیف پول'), findsOneWidget);
+    expect(find.byType(QrImageView), findsNothing);
+    expect(find.text('kiro-$testPaymentId'), findsNothing);
+    await tester.tap(find.text('پرداخت دستی (اگر کیف پول باز نشد)'));
+    await tester.pumpAndSettle();
     expect(find.byType(QrImageView), findsOneWidget);
     expect(find.text('kiro-$testPaymentId'), findsOneWidget);
-    expect(find.text('باز کردن کیف پول'), findsOneWidget);
     expect(find.text('پرداخت کردم، بررسی کن'), findsOneWidget);
     expect(find.text('مبلغ: ۰.۷ TON'), findsOneWidget); // default tier is 30 s
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('settings: recovery code is hidden until tapped', (tester) async {
+  testWidgets('settings: payment id and recovery code sit under a collapsed section; code hidden until tapped', (tester) async {
     final (settings, studio, billing) = (await tester.runAsync(_setup))!;
     await tester.pumpWidget(_app(settings, studio, billing, const SingleChildScrollView(child: CreditTiles())));
     await tester.pumpAndSettle();
     final code = billing.service!.recoveryCode;
     expect(find.text(code), findsNothing);
+    expect(find.text(testPaymentId), findsNothing);
+    await tester.tap(find.text('پیشرفته / پشتیبان'));
+    await tester.pumpAndSettle();
     expect(find.text(testPaymentId), findsOneWidget);
+    expect(find.text(code), findsNothing);
     await tester.tap(find.text('برای نمایش بزنید'));
     await tester.pumpAndSettle();
     expect(find.text(code), findsOneWidget);
@@ -104,11 +113,12 @@ void main() {
 
   testWidgets('without billing the video tab shows a friendly message and still works', (tester) async {
     final (settings, studio, _) = (await tester.runAsync(_setup))!;
-    studio.billing = null;
-    await tester.pumpWidget(_app(settings, studio, BillingController(null), const VideoTab()));
+    studio.gate = PaidGate();
+    await tester.pumpWidget(_app(settings, studio, BillingController(null, gate: studio.gate), const VideoTab()));
     await tester.pumpAndSettle();
     expect(find.text('ویدیوی پولی فعلاً در دسترس نیست. بقیهٔ امکانات استودیو مثل قبل کار می‌کنند.'), findsOneWidget);
-    expect(find.text('ویدیو با صحنه‌های خودتان (رایگان)'), findsOneWidget);
+    expect(find.text('ویدیو با صحنه‌های خودتان'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('English on a small phone with the model installed: no overflow, render enabled', (tester) async {
