@@ -53,7 +53,7 @@
 | R8: نگه‌داشتن `SdNative` و `SdProgress.onStep` | ✅ |
 | CMake اندروید: ساخت `libkiro_sd.so` با ExternalProject وقتی نسخهٔ آماده نیست | ✅ (مسیر CI از نسخهٔ آماده استفاده می‌کند) |
 | FFmpeg 8.1.3 + x264 با NDK، بسته‌بندی به‌صورت `libkiro_ffmpeg.so` | ✅ |
-| CI: ساخت و کش `libkiro_sd.so` و FFmpeg، بررسی وجودشان در APK، حذف فایل‌های وب sherpa-onnx (`ignoreAssetsPatterns`)، اکشن‌های به‌روز (checkout v7، setup-java v6، cache v6، upload-artifact v7، action-gh-release v3)، Release فقط با تگ `v*` | ✅ |
+| CI: ساخت و کش `libkiro_sd.so` و FFmpeg، بررسی وجودشان در APK، حذف فایل‌های وب sherpa-onnx (wasm/js) پس از کپی دارایی‌های Flutter در Gradle، اکشن‌های به‌روز (checkout v7، setup-java v6، cache v6، upload-artifact v7، action-gh-release v3)، Release فقط با تگ `v*` | ✅ |
 | قالب‌ها، تایم‌لاین ویدیو، فرمان FFmpeg، راوی sherpa-onnx (Piper)، زبانهٔ استودیو، پیش‌نویس‌ها نسخهٔ ۲ | ✅ |
 | پیش‌نمایش تصویر/ویدیو در پیش‌نویس‌ها (فریم پوستر ویدیو با FFmpeg هنگام ذخیره) | ✅ |
 | تست‌های گیرکرده: `studio_service_test` (رندر قالب) و `widget_smoke_test` — کار واقعی فایل داخل `tester.runAsync` منتقل شد | ✅ |

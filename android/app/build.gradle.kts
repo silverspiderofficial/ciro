@@ -73,15 +73,6 @@ android {
         }
     }
 
-    androidResources {
-        // AAPT's default ignore list, plus the sherpa-onnx web build (WebAssembly runtime for
-        // browsers only; Android uses the native libsherpa-onnx library).
-        ignoreAssetsPatterns += listOf(
-            "!.svn", "!.git", "!.ds_store", "!*.scc", ".*", "<dir>_*", "!CVS", "!thumbs.db", "!picasa.ini", "!*~",
-            "!sherpa-onnx-wasm-web.wasm", "!sherpa-onnx-*.js",
-        )
-    }
-
     packaging {
         jniLibs {
             // ggml loads its CPU backend variants with dlopen() from nativeLibraryDir,
@@ -124,4 +115,23 @@ dependencies {
 
 flutter {
     source = "../.."
+}
+
+// sherpa-onnx ships its browser (WebAssembly) build as Flutter assets of sherpa_onnx_web.
+// Android uses the native libsherpa-onnx libraries, so drop those files. Flutter copies its
+// assets into the merged-assets folder after AGP's merge (AAPT ignore patterns don't apply),
+// hence the clean-up right after that copy.
+tasks.configureEach {
+    if (name.startsWith("copyFlutterAssets")) {
+        doLast {
+            outputs.files.forEach { root ->
+                root.walkTopDown()
+                    .filter { f ->
+                        f.isFile && f.invariantSeparatorsPath.contains("packages/sherpa_onnx_web/") &&
+                            (f.name.endsWith(".wasm") || f.name.endsWith(".js"))
+                    }
+                    .forEach { it.delete() }
+            }
+        }
+    }
 }
