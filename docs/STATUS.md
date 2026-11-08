@@ -138,6 +138,15 @@
 - رندر واقعی ویرایشگر با FFmpeg روی لینوکس: دو ویدیو (یکی با صدا و سرعت ۱٫۵، یکی بی‌صدا با سرعت ۰٫۵ و نصف‌شده) و یک عکس با موسیقی ← H.264 ۱۰۸۰×۱۹۲۰ با صدای AAC و مدت برابر برنامه (±۰٫۱۵ ثانیه).
 - کد مالک واقعی (فقط روی سندباکس، بیرون از مخزن) با هش داخل برنامه بررسی و پذیرفته شد.
 
+### ساخت CI و انتشار v1.3.0 (۲۰۲۶-۱۱-۰۸)
+- اجرای شاخهٔ کار با FFmpeg تازه‌ساخته (کامیت `90afbd8`): https://github.com/silverspiderofficial/ciro/actions/runs/42503540908 — موفق.
+- اجرای شاخهٔ کار نهایی (کامیت `717e2a7`): https://github.com/silverspiderofficial/ciro/actions/runs/42504839190 — موفق.
+- اجرای main: https://github.com/silverspiderofficial/ciro/actions/runs/42505364508 — موفق.
+- اجرای تگ: https://github.com/silverspiderofficial/ciro/actions/runs/42505371211 — موفق.
+- Release: [v1.3.0](https://github.com/silverspiderofficial/ciro/releases/tag/v1.3.0) — فایل `kiro-v1.3.0-arm64.apk` (۴۵٫۵۷ مگابایت، SHA-256 `fbed2b1a9b7ce3a9dd0d0f9495fe86875f1090931cb80bec80cb7c28d796254a`).
+- داخل APK بررسی شد: همهٔ کتابخانه‌های بومی قبلی؛ `libkiro_ffmpeg.so` تازه شامل atempo، transpose/hflip، HEVC، VP8/VP9، Opus، FLAC و Matroska است؛ کد مالک در APK نیست.
+- هیچ خطای CI در مسیر نبود.
+
 ### آنچه هنوز بررسی نشده
 - اجرای ویرایشگر روی گوشی واقعی: انتخاب فایل، ویدیوهای HEVC/HDR گوشی، زمان رندر و گرما.
 - پرداخت واقعی TON و باز شدن کیف پول واقعی.
