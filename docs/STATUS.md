@@ -62,6 +62,15 @@
 - `flutter analyze` بدون مشکل و همهٔ تست‌ها (از جمله تست‌های استودیو و پیش‌نمایش پیش‌نویس) روی سیستم محلی و CI موفق.
 - CI: نتیجهٔ ساخت و محتوای APK در بخش «ساخت CI مرحلهٔ ۲» پایین.
 
+### ساخت CI مرحلهٔ ۲ و انتشار v1.1.0 (۲۰۲۶-۱۱-۰۸)
+- اجرای main (کامیت `7a04bdc`): https://github.com/silverspiderofficial/ciro/actions/runs/42497134706 — موفق.
+- اجرای تگ: https://github.com/silverspiderofficial/ciro/actions/runs/42498429825 — موفق (`libkiro_sd.so` و FFmpeg از کش).
+- Release: [v1.1.0](https://github.com/silverspiderofficial/ciro/releases/tag/v1.1.0) — فایل `kiro-v1.1.0-arm64.apk` (۴۶٫۶۷ مگابایت، SHA-256 `6264039338f53f4e13fbb8ca66c9cfee67ea7c6515c12b848e60a9e21770e72a`).
+- analyze بدون مشکل، ۹۵ تست موفق.
+- داخل APK بررسی شد: `libkiro_sd.so` (۳۷٫۶ مگابایت)، `libkiro_ffmpeg.so` (۶٫۳ مگابایت، فایل اجرایی PIE برای aarch64)، `libkiro_llm.so`، `libllama.so`، `libggml*.so`، هر ۷ نسخهٔ CPU، `libsherpa-onnx-c-api.so`، `libonnxruntime.so`، `libc++_shared.so`؛ هیچ ABI دیگر و هیچ فایل wasm/js وب sherpa-onnx.
+- تنها خطای مسیر: در اجرای اول فایل wasm وب sherpa-onnx هنوز در APK بود (الگوی AAPT روی دارایی‌های Flutter اثر ندارد)؛ با حذف آن پس از کپی دارایی‌ها در Gradle رفع شد.
+- هشدار غیرمسدودکننده: `hendrikmuhs/ccache-action@v1.2` هنوز Node 20 است (GitHub آن را روی Node 24 اجرا می‌کند).
+
 ### آنچه هنوز بررسی نشده
 - اجرای واقعی روی گوشی: تولید تصویر با `libkiro_sd.so`، اجرای `libkiro_ffmpeg.so` از `nativeLibraryDir`، سرویس پیش‌زمینه و ذخیره در گالری روی اندروید ۸ تا ۱۵.
 - کدهای Kotlin فقط در CI (Gradle) کامپایل شده‌اند؛ تست واحد Kotlin برای مسیر تصویر وجود ندارد.
