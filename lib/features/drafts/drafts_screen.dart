@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +9,7 @@ import '../../app/services.dart';
 import '../../core/format.dart';
 import '../../data/repositories.dart';
 import '../../l10n/strings.dart';
+import '../../studio/studio_service.dart';
 
 class DraftsScreen extends StatefulWidget {
   const DraftsScreen({super.key});
@@ -66,6 +69,7 @@ class _DraftsScreenState extends State<DraftsScreen> {
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ExpansionTile(
+                        leading: d.isImage || d.isVideo ? DraftThumbnail(draft: d) : null,
                         title: Text(d.title.isEmpty ? '—' : d.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                         subtitle: Text(localizeDigits(fmt.format(d.createdAt), s.languageCode)),
                         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -95,6 +99,47 @@ class _DraftsScreenState extends State<DraftsScreen> {
                     );
                   },
                 ),
+    );
+  }
+}
+
+/// Small preview for image and video drafts. Videos show their poster frame (made when the
+/// draft was saved) with a play badge, or a film icon when there is none.
+class DraftThumbnail extends StatelessWidget {
+  const DraftThumbnail({super.key, required this.draft, this.size = 56});
+  final Draft draft;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final video = draft.isVideo;
+    final path = video ? StudioService.videoThumbPath(draft.mediaPath!) : draft.mediaPath!;
+    final fallback = Container(
+      color: scheme.surfaceContainerHighest,
+      alignment: Alignment.center,
+      child: Icon(video ? Icons.movie_outlined : Icons.image_not_supported_outlined, color: scheme.onSurfaceVariant),
+    );
+    final px = (size * MediaQuery.devicePixelRatioOf(context)).round();
+    return SizedBox.square(
+      dimension: size,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.file(
+              File(path),
+              fit: BoxFit.cover,
+              cacheWidth: px,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => fallback,
+            ),
+            if (video)
+              const Center(child: Icon(Icons.play_circle_fill, color: Colors.white70, size: 24)),
+          ],
+        ),
+      ),
     );
   }
 }

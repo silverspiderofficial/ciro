@@ -23,6 +23,7 @@ import 'studio_errors.dart';
 import 'templates/templates.dart';
 import 'tts/tts_engine.dart';
 import 'video/video_project.dart';
+import 'video/ffmpeg_runner.dart';
 import 'video/video_renderer.dart';
 
 enum StudioJobKind { image, template, video }
@@ -251,8 +252,30 @@ class StudioService extends ChangeNotifier {
     return platform.saveToGallery(path, video: video, displayName: 'kiro_${_stamp()}${video ? '.mp4' : '.png'}');
   }
 
-  Future<int> saveMediaDraft({required String title, required String path, String caption = '', String? extra}) {
+  /// Poster frame stored next to a rendered video, shown in the drafts list.
+  static String videoThumbPath(String video) => '$video.thumb.png';
+
+  /// Best effort: a missing FFmpeg or a failed extraction just leaves the draft without a poster.
+  Future<void> _makeVideoThumb(String video) async {
+    FfmpegRunner? runner;
+    try {
+      final exe = await platform.ffmpegPath();
+      if (exe == null) return;
+      runner = FfmpegRunner(exe);
+      await runner.run([
+        '-hide_banner', '-loglevel', 'error', '-y',
+        '-ss', '0.5', '-i', video,
+        '-frames:v', '1', '-vf', 'scale=320:-2', '-c:v', 'png', '-f', 'image2',
+        videoThumbPath(video),
+      ]).timeout(const Duration(seconds: 20));
+    } on Object {
+      runner?.cancel();
+    }
+  }
+
+  Future<int> saveMediaDraft({required String title, required String path, String caption = '', String? extra}) async {
     final video = path.toLowerCase().endsWith('.mp4');
+    if (video && !await File(videoThumbPath(path)).exists()) await _makeVideoThumb(path);
     return drafts.add(Draft(
       title: title.isEmpty ? p.basename(path) : title,
       content: '',

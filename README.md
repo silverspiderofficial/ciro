@@ -3,7 +3,7 @@
 دستیار تولید محتوای اینستاگرام که مدل هوش مصنوعی را **روی خود گوشی** و **بدون اینترنت** اجرا می‌کند.
 فارسی (راست‌به‌چپ) به‌صورت پیش‌فرض، با پشتیبانی کامل از انگلیسی.
 
-> وضعیت: **مرحلهٔ ۱** — جزئیات در [`docs/STATUS.md`](docs/STATUS.md).
+> وضعیت: **مرحلهٔ ۲ (v1.1.0)** — جزئیات در [`docs/STATUS.md`](docs/STATUS.md).
 
 ---
 
@@ -20,11 +20,21 @@
 - **سازندهٔ کپشن و هشتگ**: موضوع ← کپشن فارسی/انگلیسی + دسته‌های هشتگ (هر دسته حداکثر ۵ هشتگ، مطابق محدودیت اینستاگرام از دسامبر ۲۰۲۵) و کپی در کلیپ‌بورد؛ ذخیره در پیش‌نویس‌ها.
 - **API اختیاری**: کلید Gemini (Google AI Studio) یا هر سرویس سازگار با OpenAI (آدرس پایهٔ HTTPS + نام مدل). کلید فقط در `flutter_secure_storage` (رمزنگاری‌شده با Android Keystore) ذخیره می‌شود و هرگز در کد یا مخزن نیست. اگر فعالش نکنید، برنامه کاملاً آفلاین کار می‌کند.
 - **تنظیمات**: مدل‌ها، کلید API، رشته‌ها/زمینه/دما/طول پاسخ/مراحل عامل، پوسته (روشن/تیره/سیستم)، زبان (فارسی/انگلیسی)، قفل برنامه با PIN یا اثر انگشت/چهره.
-- **رابط کاربری**: Material 3، فونت وزیرمتن (Vazirmatn، داخل برنامه)، شش زبانه: گفتگو، استودیو، صف پست، برنامه‌ها، مهارت‌ها، تنظیمات. زبانه‌های استودیو، صف پست و برنامه‌ها در این مرحله پیام «در مرحلهٔ بعد» و فهرست امکانات آینده را نشان می‌دهند.
+- **رابط کاربری**: Material 3، فونت وزیرمتن (Vazirmatn، داخل برنامه)، شش زبانه: گفتگو، استودیو، صف پست، برنامه‌ها، مهارت‌ها، تنظیمات. زبانه‌های صف پست و برنامه‌ها هنوز پیام «در مرحلهٔ بعد» را نشان می‌دهند.
+
+## امکانات مرحلهٔ ۲ — استودیو
+
+- **ساخت تصویر روی گوشی** با stable-diffusion.cpp (SD-Turbo یا SD 1.5 به‌صورت GGUF + رمزگشای سبک TAESD). موتور در همان فرآیند جدای `:ai` اجرا می‌شود؛ پیش از شروع، مدل گفتگو از حافظه خارج و رم آزاد بررسی می‌شود. همهٔ فراخوانی‌های بومی محافظت شده‌اند و هر خطا (کمبود رم، خرابی فایل، لغو، مرگ فرآیند) به‌صورت پیام فارسی نشان داده می‌شود، نه بسته شدن برنامه.
+- **قالب‌های آماده** (عنوان، نقل‌قول، فهرست، اسلاید کاروسل…) با متن فارسی راست‌به‌چپ و خروجی PNG در اندازهٔ اینستاگرام.
+- **ساخت ویدیو و ریلز** با FFmpeg 8.1.3 (+x264): صحنه‌ها با حرکت Ken Burns، گذارها، متن متحرک، زیرنویس روی تصویر، موسیقی زمینه و صدای راوی.
+- **راوی آفلاین** فارسی و انگلیسی با صداهای Piper از طریق sherpa-onnx.
+- کارهای سنگین خارج از رشتهٔ رابط کاربری اجرا می‌شوند، با سرویس پیش‌زمینه و اعلان پیشرفت، و فقط هنگام شارژ یا باتری کافی (قابل تنظیم).
+- ذخیره در گالری (Pictures/Kiro و Movies/Kiro)، پیش‌نویس‌ها با پیش‌نمایش تصویر و ویدیو.
+- ابزارهای عامل: `make_image_prompt`، `generate_image`، `edit_video`.
 
 ## نصب
 
-1. از صفحهٔ **Releases** همین مخزن، آخرین فایل `kiro-v1.0.N-arm64.apk` را روی گوشی دانلود کنید.
+1. از صفحهٔ **Releases** همین مخزن، آخرین فایل `kiro-vX.Y.Z-arm64.apk` را روی گوشی دانلود کنید.
 2. اجازهٔ «نصب برنامه‌های ناشناس» را برای مرورگر یا مدیر فایل بدهید و APK را نصب کنید.
 3. نیازمندی‌ها: اندروید ۸ (API 26) یا بالاتر، پردازندهٔ **arm64-v8a**. برای مدل‌های ۳ میلیاردی حداقل ۶ گیگ رم پیشنهاد می‌شود.
 
@@ -47,20 +57,27 @@
 
 ## همهٔ آدرس‌هایی که برنامه به آن‌ها وصل می‌شود
 
-برنامه هیچ آنالیتیکس، تبلیغ، Firebase یا سرویس گوگل‌پلی ندارد. مجوز `INTERNET` فقط برای این موارد است:
+برنامه هیچ آنالیتیکس، تبلیغ، Firebase یا سرویس گوگل‌پلی ندارد. مجوز `INTERNET` فقط برای این موارد است و هر اتصال فقط با اقدام خود شما شروع می‌شود:
 
-1. **دانلود مدل** (فقط وقتی شما «دانلود» را بزنید):
+1. **دانلود مدل گفتگو** (تنظیمات ← مدیریت مدل‌ها ← «دانلود»):
    - `https://huggingface.co/bartowski/google_gemma-3-1b-it-GGUF/resolve/main/google_gemma-3-1b-it-Q4_K_M.gguf`
    - `https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf`
    - `https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf`
    - `https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf`
    - `https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf`
-   - این آدرس‌ها به سرورهای دانلود Hugging Face هدایت (redirect) می‌شوند، مثل `us.aws.cdn.hf.co` یا `cas-bridge.xethub.hf.co`. سرویس دانلود فقط میزبان‌های `huggingface.co`، `*.huggingface.co` و `*.hf.co` را با HTTPS می‌پذیرد و هر آدرس دیگری را رد می‌کند.
-2. **Gemini (اختیاری)** — فقط اگر کلید Gemini بدهید و «استفاده از API» را روشن کنید:
+2. **دانلود فایل‌های استودیو** (استودیو ← فایل‌های استودیو ← «دانلود»)، همه با نسخهٔ (commit) ثابت:
+   - مدل تصویر SD-Turbo: `https://huggingface.co/Green-Sky/SD-Turbo-GGUF/resolve/19a31586d02d64a73b4419bc193b3ecfaf38e1f0/sd_turbo-f16-q8_0.gguf`
+   - مدل تصویر SD 1.5: `https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/031b5f5df991f511b3f5fa8fed6d99048ababb69/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf`
+   - رمزگشای TAESD: `https://huggingface.co/madebyollin/taesd/resolve/614f76814bbe30edbe2e627ace1c2234c81a2c0e/diffusion_pytorch_model.safetensors`
+   - صدای فارسی: `https://huggingface.co/csukuangfj/vits-piper-fa_IR-amir-medium/resolve/e852208889c7cb924b8b43eace4e8bff847b13a1/fa_IR-amir-medium.onnx` و `…/tokens.txt`
+   - صدای انگلیسی: `https://huggingface.co/csukuangfj/vits-piper-en_US-joe-medium/resolve/cda0697165d154bb152754dcdf4ea4ad13650e37/en_US-joe-medium.onnx` و `…/tokens.txt`
+3. **سرورهای دانلود Hugging Face**: آدرس‌های بالا به CDN هدایت (redirect) می‌شوند، مثل `us.aws.cdn.hf.co`، `cdn-lfs.huggingface.co` یا `cas-bridge.xethub.hf.co`. دانلودها فقط میزبان‌های `huggingface.co`، `*.huggingface.co` و `*.hf.co` را با HTTPS می‌پذیرند و هر آدرس دیگری را رد می‌کنند. همهٔ فایل‌ها پیش از استفاده با SHA-256 بررسی می‌شوند.
+4. **Gemini (اختیاری)** — فقط اگر کلید Gemini بدهید و «استفاده از API» را روشن کنید:
    - `https://generativelanguage.googleapis.com/v1beta/models/<نام مدل>:streamGenerateContent?alt=sse`
-3. **سرویس سازگار با OpenAI (اختیاری)** — فقط اگر خودتان آدرس پایه را وارد و API را فعال کنید:
+5. **سرویس سازگار با OpenAI (اختیاری)** — فقط اگر خودتان آدرس پایه را وارد و API را فعال کنید:
    - `<آدرس پایهٔ شما>/chat/completions` (فقط HTTPS)
 
+ساخت تصویر، ویدیو، صدا و قالب‌ها کاملاً آفلاین است (FFmpeg با `--disable-network` ساخته شده است). موسیقی‌های زمینه داخل برنامه‌اند؛ پیوندهای opengameart.org در صفحهٔ مجوزها فقط برای ذکر منبع نمایش داده می‌شوند و برنامه به آن‌ها وصل نمی‌شود.
 هیچ اتصال دیگری وجود ندارد. ترافیک متنی ساده (HTTP) در کل برنامه مسدود است و فقط گواهی‌های سیستمی پذیرفته می‌شوند (گواهی‌های نصب‌شده توسط کاربر پذیرفته نمی‌شوند).
 
 ## حریم خصوصی
@@ -94,11 +111,13 @@ flutter build apk --release --target-platform android-arm64 \
 
 - llama.cpp در زمان ساخت از سورس و از تگ ثابت **`b12191`** (کامیت `e95426f16982054c379ca7bdc8186996dd22f0fe`) ساخته می‌شود؛ هیچ باینری یا کد آن در مخزن نیست. CMake خودش تگ را دریافت می‌کند، یا اگر متغیر محیطی `KIRO_LLAMA_SRC` به یک کلون همان تگ اشاره کند از آن استفاده می‌کند (CI همین کار را می‌کند و کامیت را بررسی می‌کند).
 - برای هر سطح پردازندهٔ ARM (armv8.0 تا armv9.2 با dotprod/i8mm/SVE/SME) یک نسخهٔ موتور ساخته می‌شود و در زمان اجرا بهترینِ سازگار با گوشی بارگذاری می‌شود.
+- `libkiro_sd.so` (موتور تصویر، `native/kiro_sd`) روی stable-diffusion.cpp با کامیت ثابت `9234ad822a376a4724638467736118ed61d68ee9` (master-1056) ساخته می‌شود. CI آن را یک بار در مرحله‌ای جدا (با کش) می‌سازد و در `android/app/src/main/jniLibs/arm64-v8a/` می‌گذارد؛ اگر این فایل نباشد، CMake اندروید با ExternalProject خودش آن را می‌سازد (`KIRO_SD_JOBS` تعداد کارهای موازی را محدود می‌کند؛ بعضی فایل‌ها بیش از ۳ گیگ رم می‌خواهند).
+- FFmpeg با `tool/ffmpeg/build_ffmpeg.sh android <out>` ساخته و با نام `libkiro_ffmpeg.so` بسته‌بندی می‌شود (اجرا به‌صورت فرآیند جدا از `nativeLibraryDir`).
 - ساخت کامل اندروید فقط روی x86_64 (مثلاً GitHub Actions) انجام می‌شود.
 
 ### CI (GitHub Actions)
 
-فایل `.github/workflows/build.yml` روی `ubuntu-latest` این مراحل را اجرا می‌کند: Java 17، Flutter 3.32.8، نصب NDK و CMake، ccache، دریافت llama.cpp، `flutter pub get`، `flutter analyze`، `flutter test`، ساخت APK ریلیز arm64 مبهم‌شده، بررسی وجود کتابخانه‌های بومی در APK، بارگذاری APK و فایل‌های نماد (symbols) به‌عنوان Artifact، و در هر push به `main` ساخت Release با برچسب `v1.0.<شمارهٔ اجرا>`.
+فایل `.github/workflows/build.yml` روی `ubuntu-latest` این مراحل را اجرا می‌کند: `flutter pub get`، `flutter analyze`، `flutter test`، نصب NDK و CMake، ساخت (یا بازیابی از کش) `libkiro_sd.so` و FFmpeg، دریافت llama.cpp، ساخت APK ریلیز arm64 مبهم‌شده، بررسی وجود همهٔ کتابخانه‌های بومی (از جمله `libkiro_sd.so` و `libkiro_ffmpeg.so`) و نبودِ فایل‌های WebAssembly در APK، و بارگذاری APK و فایل‌های نماد به‌عنوان Artifact. با push یک تگ `v*` (مثلاً `v1.1.0`)، Release با همان تگ ساخته می‌شود. نسخه از `pubspec.yaml` خوانده می‌شود.
 
 ## امضای نسخه (Secrets)
 
@@ -139,12 +158,19 @@ lib/
   skills/       مدل مهارت، پارسر، مخزن، مهارت پیش‌فرض
 android/app/src/main/
   cpp/          پل JNI و موتور C++ روی llama.cpp + CMakeLists
-  kotlin/       سرویس فرآیند :ai، سرویس دانلود، بررسی دستگاه و امنیت
+  kotlin/       سرویس فرآیند :ai (گفتگو + تصویر)، سرویس دانلود، سرویس کار استودیو، گالری، بررسی دستگاه و امنیت
+lib/studio/     موتور تصویر، راوی، قالب‌ها، تایم‌لاین و فرمان FFmpeg، سرویس استودیو
+native/kiro_sd/ API سادهٔ C روی stable-diffusion.cpp + پل JNI
+tool/ffmpeg/    اسکریپت ساخت FFmpeg
 tool/native_host_test/  تست موتور C++ روی کامپیوتر (خارج از CI)
 ```
 
 ## مجوزها
 
 - llama.cpp: MIT — https://github.com/ggml-org/llama.cpp
+- stable-diffusion.cpp: MIT — https://github.com/leejet/stable-diffusion.cpp
+- sherpa-onnx: Apache-2.0؛ داده‌های espeak-ng: GPL-3.0 (`assets/tts/espeak-ng-data.COPYING`)
+- FFmpeg (LGPL/GPL) با libx264 (GPL-2.0+): این باینری FFmpeg به‌خاطر x264 تحت GPL است و کد منبع و اسکریپت ساخت آن در همین مخزن است.
+- موسیقی‌های زمینه و مجوزشان: `assets/music/LICENSE.md`؛ مدل‌های تصویر و صدا مجوز خودشان را دارند (در صفحهٔ فایل‌های استودیو نمایش داده می‌شود).
 - فونت وزیرمتن: SIL Open Font License 1.1 — https://github.com/rastikerdar/vazirmatn (متن مجوز در `assets/fonts/OFL.txt` و صفحهٔ مجوزهای برنامه)
 - هر مدل مجوز خودش را دارد (جدول بالا)؛ Qwen2.5 3B فقط برای استفادهٔ غیرتجاری است.
