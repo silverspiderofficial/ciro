@@ -73,7 +73,7 @@ void main() {
     expect((await svc.refresh()).isOk, isFalse);
   });
 
-  test('tampered ledger re-derives from chain and forfeits prior credit', () async {
+  test('tampered ledger is rebuilt from the chain without locking the user out', () async {
     final ex = FakeExplorer(testPaymentId);
     final svc = await openSvc(ex);
     await svc.restoreFromRecoveryCode(testRecovery);
@@ -86,6 +86,7 @@ void main() {
     expect(svc2.tampered, isTrue);
     await svc2.refresh();
     expect(svc2.balance.credited, 800000000);
-    expect(svc2.balance.available, 0);
+    expect(svc2.balance.available, 800000000);
+    expect((await svc2.reserve(const Duration(seconds: 30))).isOk, isTrue);
   });
 }

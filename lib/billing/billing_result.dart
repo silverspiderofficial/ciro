@@ -15,7 +15,8 @@ enum BillingErrorCode {
   /// Not enough credit for the requested duration.
   insufficientFunds,
 
-  /// The local ledger failed its integrity check; spending of pre-existing credit is blocked.
+  /// The local ledger failed its integrity check. Not returned by spending calls: the ledger is
+  /// rebuilt from the chain instead (lenient handling); kept for API stability.
   tampered,
 
   /// The built-in receive address failed its integrity check (patched binary).

@@ -265,3 +265,53 @@ double? parseProgressSeconds(String line) {
   }
   return null;
 }
+
+// ---- paid multi-clip videos: join ~10 s clips, then lay music over the whole video ----
+
+/// Concat-demuxer list joining rendered clips in order. [clipNames] are file names in the same
+/// directory as the list.
+String buildClipConcatList(List<String> clipNames) {
+  final b = StringBuffer('ffconcat version 1.0\n');
+  for (final c in clipNames) {
+    b.writeln("file '${_quote(c)}'");
+  }
+  return b.toString();
+}
+
+/// Joins clips that share one encoding (same size, fps, codecs) without re-encoding.
+List<String> buildConcatArgs(String listPath, String outputPath) => [
+      '-hide_banner', '-nostdin', '-y', '-loglevel', 'error',
+      '-f', 'concat', '-safe', '0', '-i', listPath,
+      '-c', 'copy',
+      '-movflags', '+faststart',
+      '-progress', 'pipe:1', '-nostats',
+      outputPath,
+    ];
+
+/// Replaces the (silent) audio of [videoPath] with looped background music, faded in and out.
+/// The video stream is copied.
+List<String> buildMusicMuxArgs({
+  required String videoPath,
+  required String musicPath,
+  required double musicVolume,
+  required double totalSeconds,
+  required String outputPath,
+}) {
+  const norm = 'aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo';
+  final fadeOutStart = totalSeconds > 2 ? totalSeconds - 1.5 : 0.0;
+  return [
+    '-hide_banner', '-nostdin', '-y', '-loglevel', 'error',
+    '-i', videoPath,
+    '-stream_loop', '-1', '-i', musicPath,
+    '-filter_complex',
+    '[1:a]$norm,volume=${_n(musicVolume.clamp(0.0, 1.0))},atrim=0:${_n(totalSeconds)},'
+        'afade=t=in:st=0:d=0.5,afade=t=out:st=${_n(fadeOutStart)}:d=1.5[aout]',
+    '-map', '0:v', '-map', '[aout]',
+    '-c:v', 'copy',
+    '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+    '-t', _n(totalSeconds),
+    '-movflags', '+faststart',
+    '-progress', 'pipe:1', '-nostats',
+    outputPath,
+  ];
+}

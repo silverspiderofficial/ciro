@@ -1,15 +1,15 @@
 /// Append-only, encrypted, hash-chained credit ledger (one file per payment id).
 ///
-/// balance = verified on-chain credits − committed spends − open reservations − forfeited.
+/// balance = verified on-chain credits − committed spends − open reservations.
 ///
 /// Integrity: every record is sealed by [RecordCipher] with a tag chained to the previous
 /// record. The record count and last tag ("head") are kept in [SecureKeyStore], so truncating
 /// the file, deleting it, or restoring an older copy is detected as well as editing it.
 ///
-/// On tamper: the bad file is quarantined, a new ledger is started with a `tamper` marker, and
-/// credits are re-derived from the chain on the next refresh. Every credit whose transaction is
-/// not newer than the tamper time is forfeited, so editing the file can never increase the
-/// spendable balance; payments made after the event are spendable as normal.
+/// On tamper (or plain disk corruption): the bad file is quarantined, a new ledger is started
+/// with a `tamper` marker, and credits are rebuilt from the chain on the next refresh. This is
+/// deliberately lenient: the user is never locked out and keeps every on-chain payment; only the
+/// local spend history of the damaged file is lost.
 ///
 /// Writes are serialized by an in-process queue plus an OS file lock (`<file>.lock`) and are
 /// atomic (write temp file, flush, rename), then the head is updated.
@@ -55,7 +55,7 @@ class LedgerBalance {
   /// Sum of open reservations (renders in progress).
   final int reserved;
 
-  /// Credit made unspendable by a tamper event.
+  /// Credit made unspendable. Always 0: tamper handling is lenient (kept for API stability).
   final int forfeited;
 
   /// A tamper event was recorded for this payment id.
@@ -78,14 +78,11 @@ class _State {
   int? tamperLt;
 
   LedgerBalance balance() {
-    var credited = 0;
-    var forfeited = 0;
-    for (final c in credits) {
-      credited += c.n;
-      if ((tamperAt != null && c.ut <= tamperAt!) || (tamperLt != null && c.lt <= tamperLt!)) forfeited += c.n;
-    }
+    // Lenient by design: a tamper event never forfeits credit, the ledger is simply rebuilt
+    // from the chain (see the library comment).
+    final credited = credits.fold<int>(0, (s, c) => s + c.n);
     final reserved = open.values.fold<int>(0, (s, r) => s + r.nanotons);
-    return LedgerBalance(credited: credited, spent: spent, reserved: reserved, forfeited: forfeited, tampered: tamperAt != null);
+    return LedgerBalance(credited: credited, spent: spent, reserved: reserved, forfeited: 0, tampered: tamperAt != null);
   }
 
   /// Applies one decoded record. Returns false for a record that does not make sense.
@@ -366,7 +363,7 @@ class Ledger {
         return Ok(recs.where((r) => r['t'] == 'credit').length);
       });
 
-  /// Records the chain boundary for a tamper event: credits with lt <= [lt] are forfeited.
+  /// Records the newest chain lt seen after a tamper event (informational only).
   Future<BillingResult<void>> setTamperBoundary(int lt) => _guard(() async {
         if (!needsTamperBoundary) return const Ok(null);
         await _appendRaw([
@@ -380,10 +377,7 @@ class Ledger {
         if (nanotons <= 0) return const Err(BillingError(BillingErrorCode.unsupportedDuration));
         final b = _state.balance();
         if (b.available < nanotons) {
-          return Err(BillingError(
-            b.tampered && b.forfeited > 0 ? BillingErrorCode.tampered : BillingErrorCode.insufficientFunds,
-            '${b.available}<$nanotons',
-          ));
+          return Err(BillingError(BillingErrorCode.insufficientFunds, '${b.available}<$nanotons'));
         }
         final id = List<int>.generate(8, (_) => _rng.nextInt(256)).map((x) => x.toRadixString(16).padLeft(2, '0')).join();
         await _appendRaw([

@@ -15,7 +15,7 @@ class PrivacyScreen extends StatelessWidget {
         children: [
           Text(s.t('privacyBody')),
           const SizedBox(height: 12),
-          for (final k in ['privacyHostHf', 'studioPrivacyHost', 'privacyHostGemini', 'privacyHostCustom'])
+          for (final k in ['privacyHostHf', 'studioPrivacyHost', 'privacyHostTon', 'privacyHostGemini', 'privacyHostCustom'])
             ListTile(leading: const Icon(Icons.lan_outlined), title: Text(s.t(k))),
         ],
       ),

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/format.dart';
 import '../../data/settings.dart';
 import '../../l10n/strings.dart';
 import '../../l10n/studio_strings.dart';
@@ -127,7 +128,9 @@ class StudioJobBar extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(s.t('studioPhase_${job.phase}')),
+                  Text(job.detail.isEmpty
+                      ? s.t('studioPhase_${job.phase}')
+                      : '${s.t('studioPhase_${job.phase}')} ${localizeDigits(job.detail, s.languageCode)}'),
                   const SizedBox(height: 6),
                   LinearProgressIndicator(value: job.fraction),
                 ],

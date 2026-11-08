@@ -5,6 +5,7 @@ import '../../app/services.dart';
 import '../../core/format.dart';
 import '../../data/settings.dart';
 import '../../l10n/strings.dart';
+import '../billing/credit_tiles.dart';
 import '../drafts/drafts_screen.dart';
 import '../home/home_shell.dart';
 import '../lock/app_lock.dart';
@@ -17,7 +18,7 @@ import 'privacy_screen.dart';
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
-  static const appVersion = '1.1.0';
+  static const appVersion = '1.2.0';
 
   void _push(BuildContext context, Widget page) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
@@ -169,6 +170,8 @@ class SettingsScreen extends StatelessWidget {
                 ? securityReasons(security, s)
                 : s.t('securityOk')),
           ),
+          section('billSection'),
+          const CreditTiles(),
           section('secData'),
           ListTile(
             leading: const Icon(Icons.drafts_outlined),

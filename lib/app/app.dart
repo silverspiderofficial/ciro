@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../data/model_manager.dart';
 import '../data/settings.dart';
+import '../features/billing/billing_controller.dart';
 import '../features/home/home_shell.dart';
 import '../features/lock/app_lock.dart';
 import '../features/onboarding/device_check_screen.dart';
@@ -46,6 +47,7 @@ class KiroApp extends StatelessWidget {
           ChangeNotifierProvider<StudioService>.value(value: services.studio!),
           ChangeNotifierProvider<StudioAssetManager>.value(value: services.studio!.assets),
         ],
+        ChangeNotifierProvider<BillingController>.value(value: services.billing),
         ChangeNotifierProvider<StudioUiState>(create: (_) => StudioUiState(languageCode: services.settings.languageCode)),
       ],
       child: Consumer<SettingsController>(

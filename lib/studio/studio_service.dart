@@ -8,7 +8,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
+
+import '../billing/billing.dart';
 
 import '../core/native_bridge.dart';
 import '../data/device_info.dart';
@@ -22,6 +25,7 @@ import 'studio_catalog.dart';
 import 'studio_errors.dart';
 import 'templates/templates.dart';
 import 'tts/tts_engine.dart';
+import 'video/ffmpeg_command.dart';
 import 'video/video_project.dart';
 import 'video/ffmpeg_runner.dart';
 import 'video/video_renderer.dart';
@@ -29,12 +33,16 @@ import 'video/video_renderer.dart';
 enum StudioJobKind { image, template, video }
 
 class StudioJob {
-  const StudioJob(this.kind, this.phase, this.fraction);
+  const StudioJob(this.kind, this.phase, this.fraction, {this.detail = ''});
   final StudioJobKind kind;
 
-  /// image: loading | sampling | decoding; video: voice | frames | encode; template: render
+  /// image: loading | sampling | decoding; video: voice | frames | encode | clip | stitch;
+  /// template: render
   final String phase;
   final double? fraction;
+
+  /// Extra progress text shown next to the phase (e.g. "3/6" clips). Never user content.
+  final String detail;
 }
 
 class StudioService extends ChangeNotifier {
@@ -47,6 +55,8 @@ class StudioService extends ChangeNotifier {
     required this.bridge,
     required this.drafts,
     this.onAiProcessUsed,
+    this.billing,
+    this.loadAsset,
   });
 
   final StudioPlatform platform;
@@ -61,6 +71,15 @@ class StudioService extends ChangeNotifier {
   /// heavy model in memory), so the chat engine can update its state.
   final VoidCallback? onAiProcessUsed;
 
+  /// Pay-per-video credit. Null when billing could not be opened: paid video is then disabled
+  /// (the rest of the Studio keeps working).
+  BillingService? billing;
+
+  /// Asset loader for background music (tests override it).
+  final Future<ByteData> Function(String key)? loadAsset;
+  bool _imageActive = false;
+  FfmpegRunner? _stitchRunner;
+
   DeviceInfo? device;
   StudioJob? job;
   CancelToken? _cancel;
@@ -73,6 +92,27 @@ class StudioService extends ChangeNotifier {
     device = await bridge.deviceInfo();
     _dir = await platform.studioDir();
     await assets.init();
+    await _cleanPaidWork();
+  }
+
+  /// Removes work folders left by a paid render that was killed (best effort). Its credit
+  /// reservation is released by the billing ledger on startup.
+  Future<void> _cleanPaidWork() async {
+    try {
+      final work = Directory(p.join(_dir!.path, 'work'));
+      if (!await work.exists()) return;
+      await for (final e in work.list()) {
+        if (e is Directory && p.basename(e.path).startsWith('paid_')) {
+          try {
+            await e.delete(recursive: true);
+          } on FileSystemException {
+            // ignore
+          }
+        }
+      }
+    } on Object {
+      // ignore
+    }
   }
 
   Future<Directory> outputsDir() async {
@@ -125,15 +165,22 @@ class StudioService extends ChangeNotifier {
     }
   }
 
-  void _progress(StudioJobKind kind, String phase, double? fraction, String notification) {
-    _setJob(StudioJob(kind, phase, fraction));
+  void _progress(StudioJobKind kind, String phase, double? fraction, String notification, {String detail = ''}) {
+    _setJob(StudioJob(kind, phase, fraction, detail: detail));
     unawaited(platform.updateHeavyWork(notification, fraction).catchError((Object _) {}));
   }
 
   Future<void> cancel() async {
     _cancel?.cancel();
     _renderer?.cancel();
-    if (job?.kind == StudioJobKind.image) await imageEngine.cancel();
+    _stitchRunner?.cancel();
+    if (job?.kind == StudioJobKind.image || _imageActive) {
+      try {
+        await imageEngine.cancel();
+      } on Object {
+        // ignore
+      }
+    }
   }
 
   /// Generates a 512x512 image on the device. Throws [StudioException].
@@ -156,36 +203,46 @@ class StudioService extends ChangeNotifier {
     if (modelPath == null) throw const StudioException('no_model');
     return _heavy(StudioJobKind.image, 'Kiro', () async {
       final out = p.join((await outputsDir()).path, 'image_${_stamp()}.png');
-      final request = ImageRequest(
-        prompt: prompt,
-        negativePrompt: negative,
-        modelPath: modelPath,
-        taesdPath: taesd,
-        outPath: out,
-        width: width,
-        height: height,
-        steps: steps > 0 ? steps : model.defaultSteps,
-        cfg: cfg > 0 ? cfg : model.defaultCfg,
-        seed: seed,
-        threads: _threads(),
-        force: force,
+      return _runImage(
+        ImageRequest(
+          prompt: prompt,
+          negativePrompt: negative,
+          modelPath: modelPath,
+          taesdPath: taesd,
+          outPath: out,
+          width: width,
+          height: height,
+          steps: steps > 0 ? steps : model.defaultSteps,
+          cfg: cfg > 0 ? cfg : model.defaultCfg,
+          seed: seed,
+          threads: _threads(),
+          force: force,
+        ),
+        onProgress: (e) => _progress(StudioJobKind.image, e.phase, e.fraction, e.phase == 'loading' ? '…' : '${e.step}/${e.steps}'),
       );
-      try {
-        await for (final e in imageEngine.generate(request)) {
-          switch (e) {
-            case ImageProgress():
-              _progress(StudioJobKind.image, e.phase, e.fraction, e.phase == 'loading' ? '…' : '${e.step}/${e.steps}');
-            case ImageDone():
-              return e.path;
-            case ImageFailed():
-              throw StudioException(e.code, e.code == 'low_ram' ? '${e.availBytes ?? 0}/${e.needBytes ?? 0}' : '');
-          }
-        }
-        throw const StudioException('generate_failed');
-      } finally {
-        if (Platform.isAndroid) onAiProcessUsed?.call();
-      }
     });
+  }
+
+  /// Runs one image request on the engine. Throws [StudioException].
+  Future<String> _runImage(ImageRequest request, {required void Function(ImageProgress e) onProgress}) async {
+    _imageActive = true;
+    try {
+      await for (final e in imageEngine.generate(request)) {
+        switch (e) {
+          case ImageProgress():
+            onProgress(e);
+          case ImageDone():
+            return e.path;
+          case ImageFailed():
+            if (_cancel?.isCancelled ?? false) throw const StudioException('cancelled');
+            throw StudioException(e.code, e.code == 'low_ram' ? '${e.availBytes ?? 0}/${e.needBytes ?? 0}' : '');
+        }
+      }
+      throw const StudioException('generate_failed');
+    } finally {
+      _imageActive = false;
+      if (Platform.isAndroid) onAiProcessUsed?.call();
+    }
   }
 
   int _threads() {
@@ -236,6 +293,203 @@ class StudioService extends ChangeNotifier {
           _renderer = null;
         }
       });
+
+  /// Why a paid topic video cannot start right now, as a [StudioException] code, or null when
+  /// it can. Checked before any credit is reserved, so a blocked render never costs anything.
+  String? get paidVideoBlocker {
+    if (billing == null) return 'billing_unavailable';
+    final b = imageBlocker;
+    if (b == ImageGenBlocker.noModel) return 'no_model';
+    if (b != ImageGenBlocker.none) return 'device_unsupported';
+    return null;
+  }
+
+  /// Paid video from a topic: reserves the price of [duration] once, generates one picture per
+  /// ~10 s clip ([planSegments]), renders each clip with the FFmpeg pipeline, joins them into
+  /// one 9:16 video and lays the music over it. The credit is spent only when the video is
+  /// finished; any error or cancel releases it (and a crash is released on the next start).
+  /// Throws [StudioException] only.
+  Future<String> renderTopicVideo({
+    required String topic,
+    required Duration duration,
+    String musicTrackId = 'none',
+    double musicVolume = 0.35,
+  }) async {
+    final blocker = paidVideoBlocker;
+    if (blocker != null) throw StudioException(blocker);
+    final b = billing!;
+    final tier = b.priceFor(duration);
+    if (tier == null) throw const StudioException('billing_unsupportedDuration');
+    final segments = planSegments(topic, tier.duration);
+    if (segments.isEmpty) throw const StudioException('no_topic');
+    if (busy) throw const StudioException('busy');
+    await _checkPower();
+    final String? ffmpeg;
+    try {
+      ffmpeg = await platform.ffmpegPath();
+    } on Object {
+      throw const StudioException('no_ffmpeg');
+    }
+    if (ffmpeg == null) throw const StudioException('no_ffmpeg');
+
+    final BillingResult<Reservation> reserved;
+    try {
+      reserved = await b.reserve(tier.duration);
+    } on Object catch (e) {
+      throw StudioException('billing_storage', e.runtimeType.toString());
+    }
+    final reservation = switch (reserved) {
+      Ok(:final value) => value,
+      Err(:final error) => throw StudioException('billing_${error.code.name}'),
+    };
+    var settled = false;
+    try {
+      final path = await _heavy(StudioJobKind.video, 'Kiro', () => _renderSegments(segments, ffmpeg!, musicTrackId, musicVolume));
+      settled = true;
+      try {
+        await b.commit(reservation.id);
+      } on Object {
+        // The video exists; an unrecorded spend is released on the next start (lenient).
+      }
+      return path;
+    } on StudioException {
+      rethrow;
+    } on Object catch (e) {
+      throw StudioException('render_failed', e.runtimeType.toString());
+    } finally {
+      if (!settled) {
+        try {
+          await b.release(reservation.id);
+        } on Object {
+          // Released on the next start by the ledger's reconcile.
+        }
+      }
+    }
+  }
+
+  static const _clipMotions = [CameraMotion.zoomIn, CameraMotion.panLeft, CameraMotion.zoomOut, CameraMotion.panRight];
+
+  Future<String> _renderSegments(List<SegmentPrompt> segments, String ffmpeg, String musicTrackId, double musicVolume) async {
+    final dir = _dir ??= await platform.studioDir();
+    final work = Directory(p.join(dir.path, 'work', 'paid_${DateTime.now().millisecondsSinceEpoch}'));
+    await work.create(recursive: true);
+    final cancel = _cancel;
+    void checkCancel() {
+      if (cancel?.isCancelled ?? false) throw const StudioException('cancelled');
+    }
+
+    final n = segments.length;
+    // Share of the bar per clip: picture 60 %, clip encode 40 %; joining takes the last 5 %.
+    double overall(int i, double part) => ((i + part.clamp(0.0, 1.0)) / n) * 0.95;
+    try {
+      final model = imageModel;
+      final modelPath = assets.pathOf(model.primary);
+      if (modelPath == null) throw const StudioException('no_model');
+      final taesd = assets.pathOf(taesdFile) ?? '';
+      final clips = <String>[];
+      for (var i = 0; i < n; i++) {
+        checkCancel();
+        final seg = segments[i];
+        final detail = '${i + 1}/$n';
+        _progress(StudioJobKind.video, 'clip', overall(i, 0), detail, detail: detail);
+        final image = await _runImage(
+          ImageRequest(
+            prompt: seg.prompt,
+            negativePrompt: 'text, watermark, logo, blurry, low quality',
+            modelPath: modelPath,
+            taesdPath: taesd,
+            outPath: p.join(work.path, 'img_$i.png'),
+            width: 512,
+            height: 512,
+            steps: model.defaultSteps,
+            cfg: model.defaultCfg,
+            seed: -1,
+            threads: _threads(),
+          ),
+          onProgress: (e) => _progress(StudioJobKind.video, 'clip', overall(i, (e.fraction ?? 0) * 0.6), detail, detail: detail),
+        );
+        checkCancel();
+        final clip = p.join(work.path, 'clip_$i.mp4');
+        final renderer = VideoRenderer(
+          ffmpegPath: () async => ffmpeg,
+          tts: tts,
+          voiceFiles: _voiceFiles,
+          workRoot: work.path,
+        );
+        _renderer = renderer;
+        try {
+          await renderer.render(
+            VideoProject(
+              scenes: [
+                VideoScene(
+                  imagePath: image,
+                  durationSeconds: seg.duration.inMilliseconds / 1000,
+                  motion: _clipMotions[i % _clipMotions.length],
+                ),
+              ],
+              subtitles: false,
+            ),
+            clip,
+            cancel: cancel,
+            onProgress: (phase, f) => _progress(StudioJobKind.video, 'clip', overall(i, 0.6 + (f ?? 0) * 0.4), detail, detail: detail),
+          );
+        } finally {
+          _renderer = null;
+        }
+        clips.add(clip);
+        try {
+          await File(image).delete();
+        } on FileSystemException {
+          // ignore
+        }
+      }
+      checkCancel();
+
+      _progress(StudioJobKind.video, 'stitch', 0.95, '…');
+      final out = p.join((await outputsDir()).path, 'video_${_stamp()}.mp4');
+      final list = p.join(work.path, 'clips.ffconcat');
+      await File(list).writeAsString(buildClipConcatList([for (final c in clips) p.basename(c)]));
+      final track = musicById(musicTrackId);
+      final total = segments.fold<int>(0, (s, x) => s + x.duration.inMilliseconds) / 1000;
+      if (track == null) {
+        await _runStitch(ffmpeg, buildConcatArgs(list, out), cancel);
+      } else {
+        final joined = p.join(work.path, 'joined.mp4');
+        await _runStitch(ffmpeg, buildConcatArgs(list, joined), cancel);
+        checkCancel();
+        final data = await (loadAsset ?? rootBundle.load)(track.asset);
+        final music = p.join(work.path, p.basename(track.asset));
+        await File(music).writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
+        await _runStitch(
+          ffmpeg,
+          buildMusicMuxArgs(videoPath: joined, musicPath: music, musicVolume: musicVolume, totalSeconds: total, outputPath: out),
+          cancel,
+        );
+      }
+      if (!await File(out).exists()) throw const StudioException('render_failed', 'no output');
+      return out;
+    } finally {
+      try {
+        await work.delete(recursive: true);
+      } on FileSystemException {
+        // best effort
+      }
+    }
+  }
+
+  Future<void> _runStitch(String ffmpeg, List<String> args, CancelToken? cancel) async {
+    final runner = FfmpegRunner(ffmpeg);
+    _stitchRunner = runner;
+    cancel?.onCancel(runner.cancel);
+    try {
+      await runner.run(args);
+    } on FfmpegException catch (e) {
+      if (e.code == 'cancelled') throw const StudioException('cancelled');
+      throw StudioException(e.code == 'missing' ? 'no_ffmpeg' : 'render_failed', e.detail);
+    } finally {
+      _stitchRunner = null;
+    }
+  }
 
   /// For weak phones or when no image model is installed: a title card with the topic.
   Future<String> templateFallback(String title, {String subtitle = '', TemplateFormat format = TemplateFormat.portrait}) =>

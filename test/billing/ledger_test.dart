@@ -98,12 +98,12 @@ void main() {
       expect(l.detectedTamperOnOpen, isTrue);
       expect(l.tampered, isTrue);
       expect(l.balance.available, 0);
-      // Credits re-derived from the chain after the event are forfeited (paid before tamper).
+      // Lenient: the ledger is rebuilt from the chain and the user is never locked out.
       await l.addCredits([pay(1, 1000)]);
       expect(l.balance.credited, 1000);
-      expect(l.balance.forfeited, 1000);
-      expect(l.balance.available, 0);
-      expect((await l.reserve(300, const Duration(seconds: 10))).errorOrNull!.code, BillingErrorCode.tampered);
+      expect(l.balance.forfeited, 0);
+      expect(l.balance.available, 1000);
+      expect((await l.reserve(300, const Duration(seconds: 10))).isOk, isTrue);
     }
 
     test('flipping a byte in a record', () async {
@@ -157,7 +157,7 @@ void main() {
       expect(l.detectedTamperOnOpen, isTrue);
     });
 
-    test('payments after the tamper boundary are spendable', () async {
+    test('payments before and after a tamper event stay spendable', () async {
       await spentLedger();
       await ledgerFile().writeAsString('garbage\n');
       clock = clock.add(const Duration(hours: 1));
@@ -166,7 +166,7 @@ void main() {
       await l.setTamperBoundary(1001);
       // New payment: later lt and later utime than the event.
       await l.addCredits([pay(50, 600, lt: 5000, ut: clock.millisecondsSinceEpoch ~/ 1000 + 60)]);
-      expect(l.balance.available, 600);
+      expect(l.balance.available, 1600);
       expect((await l.reserve(300, const Duration(seconds: 10))).isOk, isTrue);
     });
   });

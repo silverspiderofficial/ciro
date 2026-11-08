@@ -57,12 +57,19 @@ class BillingService {
     if (!check.ok) return Err(BillingError(BillingErrorCode.addressIntegrity, check.reason));
     try {
       final master = await loadOrCreateMasterKey(keys, rng: rng);
+      final dir = Directory('${dataDir.path}${Platform.pathSeparator}billing');
+      await dir.create(recursive: true);
       var code = RecoveryCode.tryParse(await keys.read(BillingKeys.recoveryCode) ?? '');
+      // Lenient: if the platform key store lost its data, fall back to the copy in the
+      // app-private directory so the user keeps the same payment id and credit.
+      code ??= await _readIdentityBackup(dir);
       if (code == null) {
         code = RecoveryCode.generate(rng);
         await keys.write(BillingKeys.recoveryCode, code.value);
+      } else if ((await keys.read(BillingKeys.recoveryCode)) != code.value) {
+        await keys.write(BillingKeys.recoveryCode, code.value);
       }
-      final dir = Directory('${dataDir.path}${Platform.pathSeparator}billing');
+      await _writeIdentityBackup(dir, code);
       final ledger = await Ledger.open(dir: dir, paymentId: code.paymentId, keys: keys, masterKey: master, now: now, rng: rng);
       await ledger.reconcile();
       return Ok(BillingService._(
@@ -181,6 +188,7 @@ class BillingService {
       final ledger = await Ledger.open(dir: _dir, paymentId: parsed.paymentId, keys: _keys, masterKey: _masterKey, now: _now, rng: _rng);
       await ledger.reconcile();
       await _keys.write(BillingKeys.recoveryCode, parsed.value);
+      await _writeIdentityBackup(_dir, parsed);
       _code = parsed;
       _ledger = ledger;
     } on FileSystemException catch (e) {
@@ -188,6 +196,29 @@ class BillingService {
     }
     _emit();
     return refresh();
+  }
+
+  static File _identityFile(Directory dir) => File('${dir.path}${Platform.pathSeparator}identity');
+
+  static Future<RecoveryCode?> _readIdentityBackup(Directory dir) async {
+    try {
+      final f = _identityFile(dir);
+      if (!await f.exists()) return null;
+      return RecoveryCode.tryParse((await f.readAsString()).trim());
+    } on Object {
+      return null;
+    }
+  }
+
+  /// Best effort; a failure here never blocks billing.
+  static Future<void> _writeIdentityBackup(Directory dir, RecoveryCode code) async {
+    try {
+      final f = _identityFile(dir);
+      if (await f.exists() && (await f.readAsString()).trim() == code.value) return;
+      await f.writeAsString(code.value, flush: true);
+    } on Object {
+      // ignore
+    }
   }
 
   void _emit() {

@@ -289,6 +289,18 @@ const Map<String, String> studioEn = {
 
 /// Message key for a StudioException code.
 String studioErrorKey(String code) => switch (code) {
+      'billing_unavailable' => 'billErr_unavailable',
+      'billing_network' ||
+      'billing_rateLimited' ||
+      'billing_badResponse' ||
+      'billing_insufficientFunds' ||
+      'billing_tampered' ||
+      'billing_addressIntegrity' ||
+      'billing_invalidCode' ||
+      'billing_unsupportedDuration' ||
+      'billing_unknownReservation' ||
+      'billing_storage' =>
+        'billErr_${code.substring(8)}',
       'power_blocked' ||
       'no_ffmpeg' ||
       'no_voice' ||
@@ -299,7 +311,9 @@ String studioErrorKey(String code) => switch (code) {
       'busy' ||
       'no_scenes' ||
       'missing_image' ||
-      'process_died' =>
+      'process_died' ||
+      'no_topic' ||
+      'render_failed' =>
         'studioErr_$code',
       _ => 'studioErr_generic',
     };

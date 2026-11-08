@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../data/settings.dart';
+import 'billing_strings.dart';
 import 'studio_strings.dart';
 
 /// App strings in Persian (default) and English. Keys are checked by test/l10n_test.dart.
@@ -282,6 +283,7 @@ class S {
     'licenses': 'مجوزها',
     'version': 'نسخه {version}',
     ...studioFa,
+    ...billingFa,
   };
 
   static const Map<String, String> en = {
@@ -538,6 +540,7 @@ class S {
     'licenses': 'Licenses',
     'version': 'Version {version}',
     ...studioEn,
+    ...billingEn,
   };
 
   /// Maps an LlmException / native error code to a message key.

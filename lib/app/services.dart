@@ -11,6 +11,7 @@ import '../data/model_manager.dart';
 import '../data/repositories.dart';
 import '../data/secure_store.dart';
 import '../data/settings.dart';
+import '../features/billing/billing_controller.dart';
 import '../llm/llm_backend.dart';
 import '../llm/local_backend.dart';
 import '../llm/remote_backend.dart';
@@ -47,7 +48,8 @@ class AppServices {
     required this.models,
     required this.security,
     this.studio,
-  });
+    BillingController? billing,
+  }) : billing = billing ?? BillingController(null);
 
   final NativeBridge bridge;
   final SettingsController settings;
@@ -61,6 +63,10 @@ class AppServices {
 
   /// Image, template and video work (null only in tests that do not need it).
   final StudioService? studio;
+
+  /// Pay-per-video credit (TON). Its service is null when billing could not be opened; paid
+  /// video is then disabled with a friendly message and nothing else is affected.
+  final BillingController billing;
 
   static Future<AppServices> create() async {
     final bridge = NativeBridge();
@@ -86,10 +92,13 @@ class AppServices {
       onAiProcessUsed: engine.markUnloadedByStudio,
     );
     await studio.init();
+    final secure = KeystoreSecureStore();
+    final billing = await openBilling(secure: secure, supportDir: support);
+    studio.billing = billing.service;
     final services = AppServices(
       bridge: bridge,
       settings: settings,
-      secure: KeystoreSecureStore(),
+      secure: secure,
       chats: db,
       drafts: db,
       skills: skills,
@@ -97,6 +106,7 @@ class AppServices {
       models: models,
       security: security,
       studio: studio,
+      billing: billing,
     );
     engine.autoReload = () => services.ensureModelLoaded();
     await services._tuneEngineOnce();

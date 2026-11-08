@@ -13,6 +13,7 @@ import '../../studio/templates/templates.dart';
 import '../../studio/video/timeline.dart';
 import '../../studio/video/video_project.dart';
 import '../../studio/video/video_renderer.dart';
+import 'paid_video_card.dart';
 import 'studio_assets_screen.dart';
 import 'studio_common.dart';
 
@@ -112,6 +113,10 @@ class VideoTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        const PaidVideoCard(),
+        const SizedBox(height: 16),
+        Text(s.t('paidManualTitle'), style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(12),
