@@ -72,10 +72,12 @@ void main() {
   });
 
   test('every billing error and paid-video code has a message', () {
+    expect(BillingErrorCode.values.map((c) => c.key).toSet(), hasLength(BillingErrorCode.values.length));
     for (final code in BillingErrorCode.values) {
+      expect(code.key, code.name, reason: 'keys match the declared names');
       expect(S.fa.containsKey(billingErrorKey(code)), isTrue, reason: code.name);
-      expect(S.fa.containsKey(studioErrorKey('billing_${code.name}')), isTrue, reason: code.name);
-      expect(studioErrorKey('billing_${code.name}'), isNot('studioErr_generic'));
+      expect(S.fa.containsKey(studioErrorKey('billing_${code.key}')), isTrue, reason: code.name);
+      expect(studioErrorKey('billing_${code.key}'), isNot('studioErr_generic'));
     }
     for (final code in ['billing_unavailable', 'no_topic', 'render_failed']) {
       expect(studioErrorKey(code), isNot('studioErr_generic'), reason: code);

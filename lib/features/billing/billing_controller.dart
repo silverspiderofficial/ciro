@@ -82,7 +82,7 @@ class BillingController extends ChangeNotifier {
 }
 
 /// Localisation key for a billing error code.
-String billingErrorKey(BillingErrorCode code) => 'billErr_${code.name}';
+String billingErrorKey(BillingErrorCode code) => 'billErr_${code.key}';
 
 /// Opens billing for the app. Never throws: on failure returns a controller without a service.
 Future<BillingController> openBilling({required SecureStore secure, required Directory supportDir}) async {

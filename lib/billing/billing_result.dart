@@ -35,6 +35,23 @@ enum BillingErrorCode {
   storage,
 }
 
+/// Stable string key per code (used for message lookup). Explicit so it survives
+/// `--obfuscate`, which may rename enum values.
+extension BillingErrorCodeKey on BillingErrorCode {
+  String get key => switch (this) {
+        BillingErrorCode.network => 'network',
+        BillingErrorCode.rateLimited => 'rateLimited',
+        BillingErrorCode.badResponse => 'badResponse',
+        BillingErrorCode.insufficientFunds => 'insufficientFunds',
+        BillingErrorCode.tampered => 'tampered',
+        BillingErrorCode.addressIntegrity => 'addressIntegrity',
+        BillingErrorCode.invalidCode => 'invalidCode',
+        BillingErrorCode.unsupportedDuration => 'unsupportedDuration',
+        BillingErrorCode.unknownReservation => 'unknownReservation',
+        BillingErrorCode.storage => 'storage',
+      };
+}
+
 class BillingError {
   const BillingError(this.code, [this.detail = '']);
   final BillingErrorCode code;
@@ -43,7 +60,7 @@ class BillingError {
   final String detail;
 
   @override
-  String toString() => 'BillingError(${code.name}${detail.isEmpty ? '' : ': $detail'})';
+  String toString() => 'BillingError(${code.key}${detail.isEmpty ? '' : ': $detail'})';
 }
 
 sealed class BillingResult<T> {

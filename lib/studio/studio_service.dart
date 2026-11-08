@@ -340,7 +340,7 @@ class StudioService extends ChangeNotifier {
     }
     final reservation = switch (reserved) {
       Ok(:final value) => value,
-      Err(:final error) => throw StudioException('billing_${error.code.name}'),
+      Err(:final error) => throw StudioException('billing_${error.code.key}'),
     };
     var settled = false;
     try {
