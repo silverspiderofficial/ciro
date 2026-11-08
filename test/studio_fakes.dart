@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:kiro/billing/billing.dart';
 import 'package:kiro/core/native_bridge.dart';
 import 'package:kiro/data/model_manager.dart' show DownloadProgress;
 import 'package:kiro/data/repositories.dart';
@@ -13,6 +14,8 @@ import 'package:kiro/studio/studio_catalog.dart';
 import 'package:kiro/studio/studio_service.dart';
 import 'package:kiro/studio/tts/tts_engine.dart';
 import 'package:kiro/studio/video/wav.dart';
+
+import 'billing/billing_test_utils.dart';
 
 class FakeStudioPlatform extends StudioPlatform {
   FakeStudioPlatform(this.dir, {this.power = const PowerStatus(level: 80, charging: false)});
@@ -105,6 +108,7 @@ Future<StudioService> fakeStudio({
   required DraftsRepository drafts,
   FakeImageEngine? engine,
   FakeStudioPlatform? platform,
+  bool owner = true,
 }) async {
   final dir = await Directory.systemTemp.createTemp('kiro_studio_test');
   final studio = StudioService(
@@ -115,6 +119,8 @@ Future<StudioService> fakeStudio({
     settings: settings,
     bridge: bridge,
     drafts: drafts,
+    // Studio tests run as the owner (every paid feature free) unless they test billing.
+    gate: PaidGate(owner: owner ? await unlockedOwner() : null),
   );
   await studio.init();
   return studio;

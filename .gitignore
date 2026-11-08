@@ -65,3 +65,8 @@ build/symbols/
 /android/app/src/main/jniLibs/
 .ffmpeg-build/
 /prebuilt/
+
+# Owner secrets never go in the repo
+secrets/
+*.key
+owner_code.txt

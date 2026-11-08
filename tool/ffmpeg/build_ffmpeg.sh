@@ -6,7 +6,8 @@
 #
 # Windows: the same configure flags work under MSYS2/MinGW (target-os=mingw32); see README.
 #
-# Only the components the renderer uses are enabled (see lib/studio/video/ffmpeg_command.dart):
+# Only the components the renderer uses are enabled (see lib/studio/video/ffmpeg_command.dart and
+# lib/studio/editor/editor_command.dart; transpose/hflip/vflip let FFmpeg auto-rotate phone videos):
 # PNG/JPEG stills, WAV narration, MP3/Ogg-Vorbis/AAC music, Ken Burns (scale+crop), xfade
 # transitions, PNG overlays (animated text + burned-in subtitles), H.264 + AAC in MP4.
 # Text is rendered by Flutter into PNGs, so no freetype/harfbuzz/libass is needed and Persian
@@ -106,13 +107,13 @@ PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig
   --enable-ffmpeg --enable-avcodec --enable-avformat --enable-avfilter --enable-swscale --enable-swresample \
   --enable-zlib --enable-libx264 \
   --enable-protocol=file,pipe \
-  --enable-demuxer=image2,png_pipe,jpeg_pipe,webp_pipe,wav,mp3,ogg,mov,aac,concat \
-  --enable-decoder=png,mjpeg,webp,pcm_s16le,pcm_f32le,mp3,mp3float,vorbis,aac,h264 \
-  --enable-parser=png,mjpeg,webp,mpegaudio,vorbis,aac,h264 \
+  --enable-demuxer=image2,png_pipe,jpeg_pipe,webp_pipe,wav,mp3,ogg,mov,aac,concat,matroska,flac \
+  --enable-decoder=png,mjpeg,webp,pcm_s16le,pcm_s24le,pcm_f32le,mp3,mp3float,vorbis,aac,h264,hevc,mpeg4,vp8,vp9,opus,flac \
+  --enable-parser=png,mjpeg,webp,mpegaudio,vorbis,aac,h264,hevc,mpeg4video,vp8,vp9,opus,flac \
   --enable-encoder=libx264,aac,png \
   --enable-muxer=mp4,mov,image2,null \
-  --enable-filter=scale,zoompan,crop,pad,format,fps,setsar,setpts,trim,null,copy,split,overlay,xfade,fade,concat,loop,color,colorchannelmixer,boxblur,eq \
-  --enable-filter=atrim,asetpts,amix,volume,afade,apad,aresample,aformat,anull,adelay,aloop,anullsrc,acompressor,alimiter,asplit,sidechaincompress
+  --enable-filter=scale,zoompan,crop,pad,format,fps,setsar,setpts,trim,null,copy,split,overlay,xfade,fade,concat,loop,color,colorchannelmixer,boxblur,eq,transpose,hflip,vflip \
+  --enable-filter=atrim,asetpts,amix,volume,afade,apad,aresample,aformat,anull,adelay,aloop,anullsrc,acompressor,alimiter,asplit,sidechaincompress,atempo
 make -j"$JOBS"
 cp ffmpeg "$OUT/ffmpeg"
 "${STRIP:-strip}" "$OUT/ffmpeg" || true

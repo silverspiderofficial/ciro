@@ -47,6 +47,13 @@ abstract class StudioPlatform {
   /// Lets the user choose a photo and copies it into [destDir]. Null when cancelled.
   Future<String?> pickImage(String destDir);
 
+  /// Can pick videos/images (and audio) from the gallery or files.
+  bool get canPickMedia => false;
+
+  /// Lets the user choose media files and copies them into [destDir]: videos and images, or
+  /// one audio file when [audio] is true. Empty when cancelled.
+  Future<List<String>> pickMedia(String destDir, {bool audio = false}) async => const [];
+
   /// Private working directory for Studio files.
   Future<Directory> studioDir() async {
     final base = await getApplicationSupportDirectory();
@@ -97,6 +104,19 @@ class AndroidStudioPlatform extends StudioPlatform {
 
   @override
   Future<String?> pickImage(String destDir) => _ch.invokeMethod<String>('pickImage', {'dir': destDir});
+
+  @override
+  bool get canPickMedia => true;
+
+  @override
+  Future<List<String>> pickMedia(String destDir, {bool audio = false}) async {
+    final r = await _ch.invokeListMethod<String>('pickMedia', {
+      'dir': destDir,
+      'mimes': audio ? ['audio/*'] : ['video/*', 'image/*'],
+      'multiple': !audio,
+    });
+    return r ?? const [];
+  }
 }
 
 /// Windows / Linux desktop.

@@ -29,10 +29,16 @@ import 'secure_key_store.dart';
 import 'ton_verifier.dart' show IncomingPayment;
 
 class Reservation {
-  const Reservation(this.id, this.nanotons, this.duration);
+  const Reservation(this.id, this.nanotons, this.duration, {this.feature, this.free = false});
   final String id;
   final int nanotons;
   final Duration duration;
+
+  /// Paid feature key (see `PaidFeature.key`); null for reservations made before v1.3.
+  final String? feature;
+
+  /// The free first use of [feature] (nanotons is 0).
+  final bool free;
 }
 
 class LedgerBalance {
@@ -69,6 +75,9 @@ class _State {
   final List<({String tx, int n, int ut, int lt})> credits = [];
   final Map<String, Reservation> open = {};
   final Set<String> settled = {};
+
+  /// Features whose free first use was committed.
+  final Set<String> freeUsed = {};
   int spent = 0;
   int? cursorLt;
   int? tamperAt;
@@ -108,8 +117,12 @@ class _State {
         final id = r['id'];
         final n = r['n'];
         final s = r['s'];
+        final f = r['f'];
+        final free = r['free'] == true;
         if (id is! String || n is! int || s is! int || open.containsKey(id) || settled.contains(id)) return false;
-        open[id] = Reservation(id, n, Duration(milliseconds: s));
+        if (f != null && f is! String) return false;
+        if (n < 0 || (n == 0 && !free) || (free && (n != 0 || f == null))) return false;
+        open[id] = Reservation(id, n, Duration(milliseconds: s), feature: f as String?, free: free);
         return true;
       case 'commit':
       case 'release':
@@ -118,7 +131,10 @@ class _State {
         final res = open.remove(id);
         if (res == null) return false;
         settled.add(id);
-        if (r['t'] == 'commit') spent += res.nanotons;
+        if (r['t'] == 'commit') {
+          spent += res.nanotons;
+          if (res.free && res.feature != null) freeUsed.add(res.feature!);
+        }
         return true;
       case 'tamper':
         final at = r['at'];
@@ -161,6 +177,10 @@ class Ledger {
   /// True when a tamper event still needs its chain-time boundary (set by the next scan).
   bool get needsTamperBoundary => _state.tamperAt != null && _state.tamperLt == null;
   List<Reservation> get openReservations => List.unmodifiable(_state.open.values);
+
+  /// True when the free first use of [feature] was committed, or is reserved right now.
+  bool freeUseTaken(String feature) =>
+      _state.freeUsed.contains(feature) || _state.open.values.any((r) => r.free && r.feature == feature);
 
   static String fileNameFor(String paymentId) => 'ledger_$paymentId.bin';
 
@@ -373,17 +393,35 @@ class Ledger {
       });
 
   /// Holds [nanotons] for a render of [duration]. Persisted before returning.
-  Future<BillingResult<Reservation>> reserve(int nanotons, Duration duration) => _guard(() async {
-        if (nanotons <= 0) return const Err(BillingError(BillingErrorCode.unsupportedDuration));
-        final b = _state.balance();
-        if (b.available < nanotons) {
-          return Err(BillingError(BillingErrorCode.insufficientFunds, '${b.available}<$nanotons'));
+  ///
+  /// [feature] tags the reservation with a paid feature key. With [free] the reservation is the
+  /// feature's free first use: [nanotons] must be 0, and it fails with insufficientFunds when
+  /// that free use is already taken (committed or reserved).
+  Future<BillingResult<Reservation>> reserve(int nanotons, Duration duration, {String? feature, bool free = false}) =>
+      _guard(() async {
+        if (free) {
+          if (feature == null || nanotons != 0) return const Err(BillingError(BillingErrorCode.unsupportedDuration));
+          if (freeUseTaken(feature)) return const Err(BillingError(BillingErrorCode.insufficientFunds, 'free-used'));
+        } else {
+          if (nanotons <= 0) return const Err(BillingError(BillingErrorCode.unsupportedDuration));
+          final b = _state.balance();
+          if (b.available < nanotons) {
+            return Err(BillingError(BillingErrorCode.insufficientFunds, '${b.available}<$nanotons'));
+          }
         }
         final id = List<int>.generate(8, (_) => _rng.nextInt(256)).map((x) => x.toRadixString(16).padLeft(2, '0')).join();
         await _appendRaw([
-          {'t': 'reserve', 'id': id, 'n': nanotons, 's': duration.inMilliseconds, 'at': _nowSec()},
+          {
+            't': 'reserve',
+            'id': id,
+            'n': nanotons,
+            's': duration.inMilliseconds,
+            'at': _nowSec(),
+            if (feature != null) 'f': feature,
+            if (free) 'free': true,
+          },
         ]);
-        return Ok(Reservation(id, nanotons, duration));
+        return Ok(Reservation(id, nanotons, duration, feature: feature, free: free));
       });
 
   Future<BillingResult<void>> commit(String id) => _settle(id, 'commit');

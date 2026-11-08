@@ -33,6 +33,9 @@ enum BillingErrorCode {
 
   /// Reading or writing the local ledger failed.
   storage,
+
+  /// Billing could not be opened on this device (paid features are disabled with a message).
+  unavailable,
 }
 
 /// Stable string key per code (used for message lookup). Explicit so it survives
@@ -49,6 +52,7 @@ extension BillingErrorCodeKey on BillingErrorCode {
         BillingErrorCode.unsupportedDuration => 'unsupportedDuration',
         BillingErrorCode.unknownReservation => 'unknownReservation',
         BillingErrorCode.storage => 'storage',
+        BillingErrorCode.unavailable => 'unavailable',
       };
 }
 

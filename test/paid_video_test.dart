@@ -74,7 +74,7 @@ class _Rig {
   }
 }
 
-Future<_Rig> _rig({bool ffmpegFails = false, bool withModel = true, bool withBilling = true}) async {
+Future<_Rig> _rig({bool ffmpegFails = false, bool withModel = true, bool withBilling = true, bool freeUsed = true}) async {
   SharedPreferences.setMockInitialValues({});
   final settings = await SettingsController.load();
   final dir = await Directory.systemTemp.createTemp('kiro_paid');
@@ -89,6 +89,8 @@ Future<_Rig> _rig({bool ffmpegFails = false, bool withModel = true, bool withBil
   ))
       .valueOrNull!;
   await billing.restoreFromRecoveryCode(testRecovery); // 0.8 TON on the fake chain
+  // Most tests check charging, so the free first use is already taken unless asked otherwise.
+  if (freeUsed) await billing.markFreeUsedForTest(PaidFeature.topicVideo);
   final studio = StudioService(
     platform: platform,
     imageEngine: engine,
@@ -126,6 +128,27 @@ void main() {
       expect(r.billing.balance.reserved, 0);
       expect(r.billing.balance.available, 300000000);
       expect(r.studio.busy, isFalse);
+    });
+  });
+
+  testWidgets('the first topic video is free, the next one is charged', (tester) async {
+    await tester.runAsync(() async {
+      final r = await _rig(freeUsed: false);
+      expect(r.studio.quote(PaidFeature.topicVideo, duration: const Duration(seconds: 20)).free, FreeReason.firstUse);
+      await r.studio.renderTopicVideo(topic: 'x', duration: const Duration(seconds: 20));
+      expect(r.billing.balance.spent, 0);
+      expect(r.billing.balance.available, 800000000);
+      expect(r.studio.quote(PaidFeature.topicVideo, duration: const Duration(seconds: 20)).free, FreeReason.none);
+      await r.studio.renderTopicVideo(topic: 'x', duration: const Duration(seconds: 20));
+      expect(r.billing.balance.spent, 500000000);
+    });
+  });
+
+  testWidgets('a failed free first use stays free for the next try', (tester) async {
+    await tester.runAsync(() async {
+      final r = await _rig(freeUsed: false, ffmpegFails: true);
+      await expectLater(r.studio.renderTopicVideo(topic: 'x', duration: const Duration(seconds: 10)), _code('render_failed'));
+      expect(r.billing.isFirstUseFree(PaidFeature.topicVideo), isTrue);
     });
   });
 

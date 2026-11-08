@@ -114,5 +114,55 @@ object StudioMedia {
         return target.absolutePath
     }
 
+    /** Copies a picked video, image or audio file (content Uri) into [destDir]; at most 2 GB. */
+    fun importMedia(context: Context, uri: Uri, destDir: String): String {
+        val dir = File(destDir)
+        if (!dir.isDirectory && !dir.mkdirs()) throw MediaException("io")
+        val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
+        val ext = when {
+            mime == "video/mp4" -> "mp4"
+            mime.contains("quicktime") -> "mov"
+            mime.contains("webm") -> "webm"
+            mime.contains("matroska") -> "mkv"
+            mime.contains("3gpp") -> "3gp"
+            mime.startsWith("video/") -> "mp4"
+            mime.contains("png") -> "png"
+            mime.contains("webp") -> "webp"
+            mime.contains("heic") || mime.contains("heif") -> "heic"
+            mime.startsWith("image/") -> "jpg"
+            mime.contains("mpeg") || mime.contains("mp3") -> "mp3"
+            mime.contains("ogg") || mime.contains("opus") -> "ogg"
+            mime.contains("wav") -> "wav"
+            mime.contains("flac") -> "flac"
+            mime.contains("aac") -> "aac"
+            mime.startsWith("audio/") -> "m4a"
+            else -> throw MediaException("unsupported")
+        }
+        val target = File(dir, "media_${System.currentTimeMillis()}_${(Math.random() * 1e6).toInt()}.$ext")
+        try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(target).use { out ->
+                    val buf = ByteArray(512 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        total += n
+                        if (total > MAX_MEDIA_BYTES) throw MediaException("too_large")
+                        out.write(buf, 0, n)
+                    }
+                }
+            } ?: throw MediaException("io")
+        } catch (e: MediaException) {
+            target.delete()
+            throw e
+        } catch (e: Exception) {
+            target.delete()
+            throw MediaException("io")
+        }
+        return target.absolutePath
+    }
+
     private const val MAX_IMPORT_BYTES = 30L * 1024 * 1024
+    private const val MAX_MEDIA_BYTES = 2L * 1024 * 1024 * 1024
 }

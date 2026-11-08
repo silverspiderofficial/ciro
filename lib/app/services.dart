@@ -49,7 +49,10 @@ class AppServices {
     required this.security,
     this.studio,
     BillingController? billing,
-  }) : billing = billing ?? BillingController(null);
+  }) : billing = billing ?? BillingController(null, gate: studio?.gate) {
+    // The Studio, the chat and the UI share one gate (owner access, free first use, credit).
+    if (studio != null && !identical(studio!.gate, this.billing.gate)) studio!.gate = this.billing.gate;
+  }
 
   final NativeBridge bridge;
   final SettingsController settings;
@@ -94,7 +97,7 @@ class AppServices {
     await studio.init();
     final secure = KeystoreSecureStore();
     final billing = await openBilling(secure: secure, supportDir: support);
-    studio.billing = billing.service;
+    studio.gate = billing.gate;
     final services = AppServices(
       bridge: bridge,
       settings: settings,

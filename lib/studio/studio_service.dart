@@ -26,9 +26,12 @@ import 'studio_errors.dart';
 import 'templates/templates.dart';
 import 'tts/tts_engine.dart';
 import 'video/ffmpeg_command.dart';
+import 'video/timeline.dart' show planTimeline;
 import 'video/video_project.dart';
 import 'video/ffmpeg_runner.dart';
 import 'video/video_renderer.dart';
+import 'editor/edit_project.dart';
+import 'editor/editor_renderer.dart';
 
 enum StudioJobKind { image, template, video }
 
@@ -55,9 +58,12 @@ class StudioService extends ChangeNotifier {
     required this.bridge,
     required this.drafts,
     this.onAiProcessUsed,
-    this.billing,
+    BillingService? billing,
+    PaidGate? gate,
     this.loadAsset,
-  });
+  }) : gate = gate ?? PaidGate() {
+    if (billing != null) this.gate.billing = billing;
+  }
 
   final StudioPlatform platform;
   final ImageEngine imageEngine;
@@ -71,9 +77,17 @@ class StudioService extends ChangeNotifier {
   /// heavy model in memory), so the chat engine can update its state.
   final VoidCallback? onAiProcessUsed;
 
-  /// Pay-per-video credit. Null when billing could not be opened: paid video is then disabled
-  /// (the rest of the Studio keeps working).
-  BillingService? billing;
+  /// Every paid action goes through this gate (owner access, free first use, TON credit).
+  PaidGate gate;
+
+  /// Pay-per-use credit. Null when billing could not be opened: paid features are then disabled
+  /// unless the owner unlock is active (the rest of the Studio keeps working).
+  BillingService? get billing => gate.billing;
+  set billing(BillingService? b) => gate.billing = b;
+
+  /// Prices (the defaults when billing is not open).
+  FeaturePricing get pricing => gate.billing?.pricing ?? _defaultPricing;
+  static final FeaturePricing _defaultPricing = FeaturePricing();
 
   /// Asset loader for background music (tests override it).
   final Future<ByteData> Function(String key)? loadAsset;
@@ -84,6 +98,7 @@ class StudioService extends ChangeNotifier {
   StudioJob? job;
   CancelToken? _cancel;
   VideoRenderer? _renderer;
+  EditorRenderer? _editorRenderer;
   Directory? _dir;
 
   bool get busy => job != null;
@@ -142,6 +157,37 @@ class StudioService extends ChangeNotifier {
     }
   }
 
+  /// Runs [work] as one paid use of [f]: reserve (or free use) → commit on success, release on
+  /// any error or cancel. Billing errors become `billing_<code>` StudioExceptions.
+  Future<T> _paid<T>(PaidFeature f, Future<T> Function() work, {Duration? duration, int units = 1}) async {
+    final BillingResult<PaidCharge> started;
+    try {
+      started = await gate.begin(f, duration: duration, units: units);
+    } on Object catch (e) {
+      throw StudioException('billing_storage', e.runtimeType.toString());
+    }
+    final charge = switch (started) {
+      Ok(:final value) => value,
+      Err(:final error) => throw StudioException('billing_${error.code.key}'),
+    };
+    var ok = false;
+    try {
+      final v = await work();
+      ok = true;
+      await gate.commit(charge);
+      return v;
+    } on StudioException {
+      rethrow;
+    } on Object catch (e) {
+      throw StudioException('render_failed', e.runtimeType.toString());
+    } finally {
+      if (!ok) await gate.release(charge);
+    }
+  }
+
+  /// Quote for one use of [f] (price, free first use, owner).
+  FeatureQuote quote(PaidFeature f, {Duration? duration, int units = 1}) => gate.quote(f, duration: duration, units: units);
+
   Future<T> _heavy<T>(StudioJobKind kind, String title, Future<T> Function() work) async {
     if (busy) throw const StudioException('busy');
     await _checkPower();
@@ -173,6 +219,7 @@ class StudioService extends ChangeNotifier {
   Future<void> cancel() async {
     _cancel?.cancel();
     _renderer?.cancel();
+    _editorRenderer?.cancel();
     _stitchRunner?.cancel();
     if (job?.kind == StudioJobKind.image || _imageActive) {
       try {
@@ -201,7 +248,9 @@ class StudioService extends ChangeNotifier {
     final modelPath = assets.pathOf(model.primary);
     final taesd = assets.pathOf(taesdFile) ?? '';
     if (modelPath == null) throw const StudioException('no_model');
-    return _heavy(StudioJobKind.image, 'Kiro', () async {
+    if (busy) throw const StudioException('busy');
+    await _checkPower();
+    return _paid(PaidFeature.image, () => _heavy(StudioJobKind.image, 'Kiro', () async {
       final out = p.join((await outputsDir()).path, 'image_${_stamp()}.png');
       return _runImage(
         ImageRequest(
@@ -220,7 +269,7 @@ class StudioService extends ChangeNotifier {
         ),
         onProgress: (e) => _progress(StudioJobKind.image, e.phase, e.fraction, e.phase == 'loading' ? '…' : '${e.step}/${e.steps}'),
       );
-    });
+    }));
   }
 
   /// Runs one image request on the engine. Throws [StudioException].
@@ -275,7 +324,24 @@ class StudioService extends ChangeNotifier {
     return VoiceFiles(model: model, tokens: tokens, dataDir: await ensureEspeakData(dir.path));
   }
 
-  Future<String> renderVideo(VideoProject project) => _heavy(StudioJobKind.video, 'Kiro', () async {
+  /// Estimated length of a scenes video (reading time when there is no narrator yet).
+  static Duration estimateScenesDuration(VideoProject project) {
+    if (project.scenes.isEmpty) return Duration.zero;
+    final plan = planTimeline(project, project.scenes.map((x) => estimateReadingSeconds(x.narration)).toList());
+    return Duration(milliseconds: (plan.totalSeconds * 1000).round());
+  }
+
+  /// Video from the user's own scenes; paid by its estimated length (first use free).
+  Future<String> renderVideo(VideoProject project) async {
+    if (project.scenes.isEmpty) throw const StudioException('no_scenes');
+    if (busy) throw const StudioException('busy');
+    await _checkPower();
+    final d = estimateScenesDuration(project);
+    if (pricing.priceFor(PaidFeature.scenesVideo, duration: d) == null) throw const StudioException('billing_unsupportedDuration');
+    return _paid(PaidFeature.scenesVideo, () => _renderScenes(project), duration: d);
+  }
+
+  Future<String> _renderScenes(VideoProject project) => _heavy(StudioJobKind.video, 'Kiro', () async {
         final dir = _dir ??= await platform.studioDir();
         final renderer = VideoRenderer(
           ffmpegPath: platform.ffmpegPath,
@@ -297,7 +363,7 @@ class StudioService extends ChangeNotifier {
   /// Why a paid topic video cannot start right now, as a [StudioException] code, or null when
   /// it can. Checked before any credit is reserved, so a blocked render never costs anything.
   String? get paidVideoBlocker {
-    if (billing == null) return 'billing_unavailable';
+    if (!gate.usable) return 'billing_unavailable';
     final b = imageBlocker;
     if (b == ImageGenBlocker.noModel) return 'no_model';
     if (b != ImageGenBlocker.none) return 'device_unsupported';
@@ -317,8 +383,7 @@ class StudioService extends ChangeNotifier {
   }) async {
     final blocker = paidVideoBlocker;
     if (blocker != null) throw StudioException(blocker);
-    final b = billing!;
-    final tier = b.priceFor(duration);
+    final tier = pricing.videoTable.tierFor(duration);
     if (tier == null) throw const StudioException('billing_unsupportedDuration');
     final segments = planSegments(topic, tier.duration);
     if (segments.isEmpty) throw const StudioException('no_topic');
@@ -332,38 +397,161 @@ class StudioService extends ChangeNotifier {
     }
     if (ffmpeg == null) throw const StudioException('no_ffmpeg');
 
-    final BillingResult<Reservation> reserved;
+    return _paid(
+      PaidFeature.topicVideo,
+      () => _heavy(StudioJobKind.video, 'Kiro', () => _renderSegments(segments, ffmpeg!, musicTrackId, musicVolume)),
+      duration: tier.duration,
+    );
+  }
+
+  // ---- video editor ----
+
+  static const _imageExts = {'.png', '.jpg', '.jpeg', '.webp', '.heic', '.heif', '.bmp', '.gif'};
+
+  Future<Directory> _editorMediaDir() async {
+    final d = Directory(p.join((_dir ??= await platform.studioDir()).path, 'editor_media'));
+    await d.create(recursive: true);
+    return d;
+  }
+
+  /// Opens the gallery/file picker and returns the chosen videos and images as clips.
+  /// Files that cannot be read are skipped; throws only when nothing usable was chosen.
+  Future<List<EditClip>> importEditorMedia() async {
+    final List<String> files;
     try {
-      reserved = await b.reserve(tier.duration);
-    } on Object catch (e) {
-      throw StudioException('billing_storage', e.runtimeType.toString());
+      files = await platform.pickMedia((await _editorMediaDir()).path);
+    } on Object {
+      throw const StudioException('import_failed');
     }
-    final reservation = switch (reserved) {
-      Ok(:final value) => value,
-      Err(:final error) => throw StudioException('billing_${error.code.key}'),
-    };
-    var settled = false;
-    try {
-      final path = await _heavy(StudioJobKind.video, 'Kiro', () => _renderSegments(segments, ffmpeg!, musicTrackId, musicVolume));
-      settled = true;
+    final clips = <EditClip>[];
+    Object? lastError;
+    for (final f in files) {
       try {
-        await b.commit(reservation.id);
-      } on Object {
-        // The video exists; an unrecorded spend is released on the next start (lenient).
+        clips.add(await clipFromFile(f));
+      } on Object catch (e) {
+        lastError = e;
       }
-      return path;
-    } on StudioException {
-      rethrow;
-    } on Object catch (e) {
-      throw StudioException('render_failed', e.runtimeType.toString());
-    } finally {
-      if (!settled) {
-        try {
-          await b.release(reservation.id);
-        } on Object {
-          // Released on the next start by the ledger's reconcile.
-        }
-      }
+    }
+    if (clips.isEmpty && lastError != null) {
+      throw lastError is StudioException ? lastError : const StudioException('unsupported_media');
+    }
+    return clips;
+  }
+
+  /// Builds a clip for a video or image file on disk (desktop "add by path" and the picker).
+  Future<EditClip> clipFromFile(String path) async {
+    if (!await File(path).exists()) throw StudioException('missing_media', p.basename(path));
+    final id = '${DateTime.now().microsecondsSinceEpoch}';
+    if (_imageExts.contains(p.extension(path).toLowerCase())) {
+      return EditClip(id: id, path: path, kind: MediaKind.image, sourceSeconds: defaultImageSeconds);
+    }
+    final String? exe;
+    try {
+      exe = await platform.ffmpegPath();
+    } on Object {
+      throw const StudioException('no_ffmpeg');
+    }
+    if (exe == null) throw const StudioException('no_ffmpeg');
+    final info = await FfmpegRunner(exe).probe(path);
+    if (info == null) throw StudioException('unsupported_media', p.basename(path));
+    final clip = EditClip(id: id, path: path, kind: MediaKind.video, sourceSeconds: info.seconds, hasAudio: info.hasAudio).normalized();
+    unawaited(editorThumb(clip));
+    return clip;
+  }
+
+  /// Picks one audio file for the background music. Null when cancelled.
+  Future<String?> pickEditorMusic() async {
+    try {
+      final files = await platform.pickMedia((await _editorMediaDir()).path, audio: true);
+      return files.isEmpty ? null : files.first;
+    } on Object {
+      throw const StudioException('import_failed');
+    }
+  }
+
+  /// Thumbnail of a clip (images: the file itself). Best effort; null when none.
+  Future<String?> editorThumb(EditClip clip) async {
+    if (clip.isImage) return clip.path;
+    final thumb = '${clip.path}.thumb.png';
+    if (await File(thumb).exists()) return thumb;
+    FfmpegRunner? runner;
+    try {
+      final exe = await platform.ffmpegPath();
+      if (exe == null) return null;
+      runner = FfmpegRunner(exe);
+      await runner.run([
+        '-hide_banner', '-loglevel', 'error', '-y',
+        '-ss', (clip.trimStart + 0.3).toStringAsFixed(2), '-i', clip.path,
+        '-frames:v', '1', '-vf', 'scale=240:-2', '-c:v', 'png', '-f', 'image2',
+        thumb,
+      ]).timeout(const Duration(seconds: 20));
+      return await File(thumb).exists() ? thumb : null;
+    } on Object {
+      runner?.cancel();
+      return null;
+    }
+  }
+
+  /// Why the editor cannot export right now (StudioException code), or null.
+  String? editorBlocker(EditProject project) {
+    if (project.clips.isEmpty) return 'no_clips';
+    if (!gate.usable) return 'billing_unavailable';
+    return null;
+  }
+
+  /// Renders the editor project. A preview (first 20 s, half size, watermarked) is free; the
+  /// export is paid by its length (first use free) and only charged when the file is made.
+  Future<String> renderEdit(EditProject project, {bool preview = false}) async {
+    if (project.clips.isEmpty) throw const StudioException('no_clips');
+    if (busy) throw const StudioException('busy');
+    await _checkPower();
+    Future<String> work() => _heavy(StudioJobKind.video, 'Kiro', () async {
+          final dir = _dir ??= await platform.studioDir();
+          final renderer = EditorRenderer(
+            ffmpegPath: platform.ffmpegPath,
+            tts: tts,
+            voiceFiles: _voiceFiles,
+            workRoot: p.join(dir.path, 'work'),
+            loadAsset: loadAsset,
+          );
+          _editorRenderer = renderer;
+          final out = preview
+              ? p.join(dir.path, 'work', 'preview.mp4')
+              : p.join((await outputsDir()).path, 'edit_${_stamp()}.mp4');
+          try {
+            return await renderer.render(project, out, preview: preview, cancel: _cancel, onProgress: (phase, f) {
+              _progress(StudioJobKind.video, phase, f, f == null ? '…' : '${(f * 100).round()}%');
+            });
+          } finally {
+            _editorRenderer = null;
+          }
+        });
+    if (preview) return work();
+    return _paid(PaidFeature.editorExport, work, duration: project.duration);
+  }
+
+  File _editorProjectFile(Directory d) => File(p.join(d.path, 'editor_project.json'));
+
+  /// The editor's last project (kept between app starts). Never throws.
+  Future<EditProject> loadEditorProject() async {
+    try {
+      final f = _editorProjectFile(_dir ??= await platform.studioDir());
+      if (!await f.exists()) return const EditProject();
+      return EditProject.decode(await f.readAsString());
+    } on Object {
+      return const EditProject();
+    }
+  }
+
+  /// Saves the editor project (best effort).
+  Future<void> saveEditorProject(EditProject project) async {
+    try {
+      final f = _editorProjectFile(_dir ??= await platform.studioDir());
+      final tmp = File('${f.path}.tmp');
+      await tmp.writeAsString(project.encode(), flush: true);
+      await tmp.rename(f.path);
+    } on Object {
+      // ignore
     }
   }
 

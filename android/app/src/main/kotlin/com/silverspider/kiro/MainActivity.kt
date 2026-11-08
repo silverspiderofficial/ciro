@@ -38,6 +38,8 @@ class MainActivity : FlutterFragmentActivity() {
     private var imageSink: EventChannel.EventSink? = null
     private var pendingPickImage: MethodChannel.Result? = null
     private var pendingPickDir: String = ""
+    private var pendingPickMedia: MethodChannel.Result? = null
+    private var pendingMediaDir: String = ""
 
     private var pendingImport: MethodChannel.Result? = null
     private var pendingTextOpen: MethodChannel.Result? = null
@@ -48,6 +50,7 @@ class MainActivity : FlutterFragmentActivity() {
     private lateinit var openTextLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var saveTextLauncher: ActivityResultLauncher<String>
     private lateinit var pickImageLauncher: ActivityResultLauncher<String>
+    private lateinit var pickMediaLauncher: ActivityResultLauncher<Array<String>>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Activity result launchers must be registered before the activity is STARTED.
@@ -55,6 +58,7 @@ class MainActivity : FlutterFragmentActivity() {
         openTextLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> onTextPicked(uri) }
         saveTextLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri -> onTextTarget(uri) }
         pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri -> onImagePicked(uri) }
+        pickMediaLauncher = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> onMediaPicked(uris) }
         super.onCreate(savedInstanceState)
     }
 
@@ -163,6 +167,18 @@ class MainActivity : FlutterFragmentActivity() {
                     pendingPickDir = call.argument<String>("dir").orEmpty()
                     pickImageLauncher.launch("image/*")
                 }
+                "pickMedia" -> {
+                    if (pendingPickMedia != null) return result.error("busy", null, null)
+                    pendingPickMedia = result
+                    pendingMediaDir = call.argument<String>("dir").orEmpty()
+                    val mimes = call.argument<List<String>>("mimes")?.toTypedArray() ?: arrayOf("video/*", "image/*")
+                    try {
+                        pickMediaLauncher.launch(mimes)
+                    } catch (e: Exception) {
+                        pendingPickMedia = null
+                        result.error("no_picker", null, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         } catch (e: Exception) {
@@ -205,6 +221,29 @@ class MainActivity : FlutterFragmentActivity() {
                 main.post { result.error(e.code, null, null) }
             } catch (e: Exception) {
                 main.post { result.error("io", null, null) }
+            }
+        }
+    }
+
+    private fun onMediaPicked(uris: List<Uri>?) {
+        val result = pendingPickMedia ?: return
+        pendingPickMedia = null
+        val dir = pendingMediaDir
+        if (uris.isNullOrEmpty()) return result.success(emptyList<String>())
+        io.execute {
+            val out = ArrayList<String>()
+            var error: String? = null
+            for (uri in uris.take(30)) {
+                try {
+                    out.add(StudioMedia.importMedia(this, uri, dir))
+                } catch (e: StudioMedia.MediaException) {
+                    error = e.code
+                } catch (e: Exception) {
+                    error = "io"
+                }
+            }
+            main.post {
+                if (out.isEmpty() && error != null) result.error(error, null, null) else result.success(out)
             }
         }
     }

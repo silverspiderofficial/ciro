@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../editor/editor_command.dart' show MediaProbe, parseProbe;
 import 'ffmpeg_command.dart';
 
 class FfmpegException implements Exception {
@@ -29,6 +30,18 @@ class FfmpegRunner {
       return r.exitCode == 0;
     } on Object {
       return false;
+    }
+  }
+
+  /// Reads duration, size and audio presence of a media file (`ffmpeg -i`). Null when the file
+  /// is not a readable video. Never throws.
+  Future<MediaProbe?> probe(String path) async {
+    try {
+      final r = await Process.run(executable, ['-hide_banner', '-nostdin', '-i', path], stderrEncoding: const Utf8Codec(allowMalformed: true))
+          .timeout(const Duration(seconds: 30));
+      return parseProbe('${r.stderr}');
+    } on Object {
+      return null;
     }
   }
 

@@ -5,6 +5,9 @@ export 'billing_config.dart' show paymentNoticeFa, paymentNoticeEn, paymentComme
 export 'billing_result.dart';
 export 'billing_service.dart';
 export 'ledger.dart' show LedgerBalance, Reservation;
+export 'owner_access.dart';
+export 'paid_feature.dart';
+export 'paid_gate.dart';
 export 'nanoton.dart' show formatNanotons, parseTonToNanotons, nanotonsPerTon;
 export 'payment_links.dart';
 export 'price_table.dart';

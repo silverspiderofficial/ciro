@@ -51,6 +51,8 @@ abstract final class BillingKeys {
   static const recoveryCode = 'billing.v1.recovery_code';
   static String ledgerHead(String paymentId) => 'billing.v1.head.$paymentId';
   static String tamperedAt(String paymentId) => 'billing.v1.tampered_at.$paymentId';
+  static String freeUsed(String feature) => 'billing.v1.free_used.$feature';
+  static const ownerToken = 'billing.v1.owner';
 }
 
 /// Returns the 32-byte master key, creating it on first use.

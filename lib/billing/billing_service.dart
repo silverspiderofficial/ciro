@@ -12,6 +12,7 @@ import 'package:http/http.dart' as http;
 import 'billing_config.dart';
 import 'billing_result.dart';
 import 'ledger.dart';
+import 'paid_feature.dart';
 import 'payment_id.dart';
 import 'payment_links.dart';
 import 'price_table.dart';
@@ -30,7 +31,10 @@ class BillingService {
     required Ledger ledger,
     required DateTime Function() now,
     required Random? rng,
-  })  : _keys = keys,
+    required this.pricing,
+    required Set<String> deviceFreeUsed,
+  })  : _deviceFreeUsed = deviceFreeUsed,
+        _keys = keys,
         _dir = dir,
         _masterKey = masterKey,
         _verifier = verifier,
@@ -72,9 +76,12 @@ class BillingService {
       await _writeIdentityBackup(dir, code);
       final ledger = await Ledger.open(dir: dir, paymentId: code.paymentId, keys: keys, masterKey: master, now: now, rng: rng);
       await ledger.reconcile();
+      final table = prices ?? PriceTable.standard();
       return Ok(BillingService._(
+        pricing: FeaturePricing(videoTable: table),
+        deviceFreeUsed: await _readDeviceFreeUsed(keys),
         receiveAddress: check.address,
-        prices: prices ?? PriceTable.standard(),
+        prices: table,
         keys: keys,
         dir: dir,
         masterKey: master,
@@ -94,6 +101,13 @@ class BillingService {
 
   final String receiveAddress;
   final PriceTable prices;
+
+  /// Prices of every paid feature (videos use [prices]).
+  final FeaturePricing pricing;
+
+  /// Features whose free first use was taken on this device (any recovery code). Lenient: if
+  /// this record is lost, another free use may be granted.
+  final Set<String> _deviceFreeUsed;
   final SecureKeyStore _keys;
   final Directory _dir;
   final List<int> _masterKey;
@@ -163,11 +177,64 @@ class BillingService {
     return r;
   }
 
-  /// Render succeeded: the reserved credit is spent.
-  Future<BillingResult<void>> commit(String reservationId) async {
-    final r = await _ledger.commit(reservationId);
+  /// True when the next use of [f] is its free first use.
+  bool isFirstUseFree(PaidFeature f) => !_deviceFreeUsed.contains(f.key) && !_ledger.freeUseTaken(f.key);
+
+  /// Price of one use of [f] in nanotons (null when not sold), before the free first use.
+  int? priceOf(PaidFeature f, {Duration? duration, int units = 1}) => pricing.priceFor(f, duration: duration, units: units);
+
+  /// Reserves one use of [f]: its free first use when still available, otherwise its price.
+  /// Commit on success, release on failure or cancel, exactly like [reserve].
+  Future<BillingResult<Reservation>> reserveFeature(PaidFeature f, {Duration? duration, int units = 1}) async {
+    final price = pricing.priceFor(f, duration: duration, units: units);
+    if (price == null) return const Err(BillingError(BillingErrorCode.unsupportedDuration));
+    final d = pricing.billedDuration(f, duration);
+    if (isFirstUseFree(f)) {
+      final r = await _ledger.reserve(0, d, feature: f.key, free: true);
+      if (r.isOk) {
+        _emit();
+        return r;
+      }
+    }
+    final r = await _ledger.reserve(price, d, feature: f.key);
     _emit();
     return r;
+  }
+
+  /// Render succeeded: the reserved credit is spent (or the free first use is used up).
+  Future<BillingResult<void>> commit(String reservationId) async {
+    Reservation? res;
+    for (final x in _ledger.openReservations) {
+      if (x.id == reservationId) res = x;
+    }
+    final r = await _ledger.commit(reservationId);
+    if (r.isOk && res != null && res.free && res.feature != null) await _markDeviceFreeUsed(res.feature!);
+    _emit();
+    return r;
+  }
+
+  /// Test hook: marks the free first use of [f] as taken on this device.
+  Future<void> markFreeUsedForTest(PaidFeature f) => _markDeviceFreeUsed(f.key);
+
+  Future<void> _markDeviceFreeUsed(String feature) async {
+    _deviceFreeUsed.add(feature);
+    try {
+      await _keys.write(BillingKeys.freeUsed(feature), '1');
+    } on Object {
+      // lenient: the ledger record still counts
+    }
+  }
+
+  static Future<Set<String>> _readDeviceFreeUsed(SecureKeyStore keys) async {
+    final out = <String>{};
+    for (final f in PaidFeature.values) {
+      try {
+        if (await keys.read(BillingKeys.freeUsed(f.key)) != null) out.add(f.key);
+      } on Object {
+        // lenient
+      }
+    }
+    return out;
   }
 
   /// Render failed or was cancelled: the reserved credit returns to the balance.

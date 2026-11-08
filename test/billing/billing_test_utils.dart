@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:kiro/billing/billing.dart';
 import 'package:kiro/billing/payment_id.dart';
 
 const testRecovery = 'ABCD-EFGH-JKMN-PQRS';
@@ -50,3 +51,15 @@ class FakeExplorer {
 }
 
 Future<void> noSleep(Duration _) async {}
+
+/// A test-only owner code with a cheap hash (the real one is never in the repo).
+const testOwnerCode = 'TEST00-OWNER0-CODE00-KIR000-ABCDEF';
+
+OwnerHash testOwnerHash({int iterations = 1000}) => OwnerHash.derive(testOwnerCode, List<int>.generate(16, (i) => i * 7), iterations);
+
+/// An owner state that is already unlocked (every paid feature free).
+Future<OwnerAccess> unlockedOwner([SecureKeyStore? keys]) async {
+  final o = OwnerAccess(keys ?? MemorySecureKeyStore(), hash: testOwnerHash());
+  await o.unlock(testOwnerCode);
+  return o;
+}
