@@ -11,6 +11,8 @@ import android.os.IBinder
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
+import com.silverspider.kiro.image.SdNative
+import com.silverspider.kiro.image.SdProgress
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.Collections
@@ -36,6 +38,13 @@ class LlmService : Service() {
     @Volatile private var initError: String? = null
     private val cancelled: MutableSet<Int> = Collections.synchronizedSet(HashSet())
 
+    // Image model (stable-diffusion.cpp). Shares the single worker thread with the chat model so
+    // only one heavy model is ever in memory.
+    @Volatile private var sdHandle: Long = 0L
+    @Volatile private var sdKey: String? = null
+    @Volatile private var currentImage: Int = NO_REQUEST
+    private val imageCancelled: MutableSet<Int> = Collections.synchronizedSet(HashSet())
+
     override fun onCreate() {
         super.onCreate()
         ipcThread = HandlerThread("kiro-llm-ipc").also { it.start() }
@@ -57,7 +66,12 @@ class LlmService : Service() {
 
     override fun onDestroy() {
         if (currentRequest != NO_REQUEST) runCatching { LlamaNative.nativeCancel() }
-        worker.execute { runCatching { if (loadedPath != null) LlamaNative.nativeUnload() } }
+        val h = sdHandle
+        if (currentImage != NO_REQUEST && h != 0L) runCatching { SdNative.nativeCancel(h) }
+        worker.execute {
+            runCatching { if (loadedPath != null) LlamaNative.nativeUnload() }
+            freeImageModel()
+        }
         worker.shutdown()
         ipcThread.quitSafely()
         super.onDestroy()
@@ -74,6 +88,16 @@ class LlmService : Service() {
             LlmIpc.MSG_CANCEL -> {
                 cancelled.add(requestId)
                 if (currentRequest == requestId) runCatching { LlamaNative.nativeCancel() }
+            }
+            LlmIpc.MSG_IMAGE_GENERATE -> worker.execute { doImage(requestId, data) }
+            LlmIpc.MSG_IMAGE_CANCEL -> {
+                imageCancelled.add(requestId)
+                val h = sdHandle
+                if (currentImage == requestId && h != 0L) runCatching { SdNative.nativeCancel(h) }
+            }
+            LlmIpc.MSG_IMAGE_UNLOAD -> worker.execute {
+                freeImageModel()
+                reply(LlmIpc.MSG_UNLOADED, requestId, Bundle())
             }
             LlmIpc.MSG_STATUS -> reply(LlmIpc.MSG_STATUS_REPLY, requestId, Bundle().apply {
                 putBoolean(LlmIpc.KEY_LOADED, loadedPath != null)
@@ -93,6 +117,7 @@ class LlmService : Service() {
             return replyError(requestId, "no_backend", initError ?: "no compute backend")
         }
         // Only one heavy model at a time: always release the current one first.
+        freeImageModel()
         if (loadedPath != null) {
             LlamaNative.nativeUnload()
             loadedPath = null
@@ -193,6 +218,111 @@ class LlmService : Service() {
         })
     }
 
+    private fun freeImageModel() {
+        val h = sdHandle
+        sdHandle = 0L
+        sdKey = null
+        if (h != 0L) runCatching { SdNative.nativeFree(h) }
+    }
+
+    private fun imageError(requestId: Int, code: String, avail: Long = 0L, need: Long = 0L) {
+        reply(LlmIpc.MSG_IMAGE_ERROR, requestId, Bundle().apply {
+            putString(LlmIpc.KEY_CODE, code)
+            putLong(LlmIpc.KEY_AVAIL, avail)
+            putLong(LlmIpc.KEY_NEED, need)
+        })
+    }
+
+    private fun imageProgress(requestId: Int, phase: String, step: Int, steps: Int) {
+        reply(LlmIpc.MSG_IMAGE_PROGRESS, requestId, Bundle().apply {
+            putString(LlmIpc.KEY_PHASE, phase)
+            putInt(LlmIpc.KEY_STEP, step)
+            putInt(LlmIpc.KEY_STEPS, steps)
+        })
+    }
+
+    /** Runs on the worker thread. Every native call is guarded; failures become error replies. */
+    private fun doImage(requestId: Int, data: Bundle) {
+        if (imageCancelled.remove(requestId)) return imageError(requestId, "cancelled")
+        val model = data.getString(LlmIpc.KEY_MODEL).orEmpty()
+        val taesd = data.getString(LlmIpc.KEY_TAESD).orEmpty()
+        val out = data.getString(LlmIpc.KEY_OUT).orEmpty()
+        val prompt = data.getString(LlmIpc.KEY_PROMPT).orEmpty()
+        val width = data.getInt(LlmIpc.KEY_WIDTH, 512)
+        val height = data.getInt(LlmIpc.KEY_HEIGHT, 512)
+        val threads = data.getInt(LlmIpc.KEY_THREADS, 4)
+        val force = data.getBoolean(LlmIpc.KEY_FORCE, false)
+        val modelFile = File(model)
+        if (!modelFile.isFile || !modelFile.canRead()) return imageError(requestId, "not_found")
+        if (taesd.isNotEmpty() && !File(taesd).isFile) return imageError(requestId, "not_found")
+        if (prompt.isBlank() || out.isEmpty()) return imageError(requestId, "generate_failed")
+        try {
+            SdNative.ensureLibrary()
+        } catch (t: Throwable) {
+            return imageError(requestId, "unsupported")
+        }
+
+        // One heavy model at a time: the chat model goes first.
+        if (loadedPath != null) {
+            runCatching { LlamaNative.nativeUnload() }
+            loadedPath = null
+            description = ""
+            reply(LlmIpc.MSG_CHAT_UNLOADED, requestId, Bundle())
+        }
+
+        val key = "$model|$taesd|$threads"
+        if (sdKey != key) freeImageModel()
+        if (sdHandle == 0L) {
+            val taesdBytes = if (taesd.isNotEmpty()) File(taesd).length() else 0L
+            val need = estimateImageBytes(modelFile.length() + taesdBytes, width, height)
+            val avail = availableMemory()
+            if (!force && avail in 1 until need) return imageError(requestId, "low_ram", avail, need)
+            imageProgress(requestId, "loading", 0, 0)
+            val h = try {
+                SdNative.nativeLoad(model, taesd, threads)
+            } catch (t: Throwable) {
+                0L
+            }
+            if (h == 0L) return imageError(requestId, "load_failed")
+            sdHandle = h
+            sdKey = key
+        }
+        if (imageCancelled.remove(requestId)) return imageError(requestId, "cancelled")
+
+        val handle = sdHandle
+        val seedOut = LongArray(1)
+        val started = System.currentTimeMillis()
+        currentImage = requestId
+        val rc = try {
+            SdNative.nativeGenerate(
+                handle, prompt, data.getString(LlmIpc.KEY_NEGATIVE).orEmpty(), width, height,
+                data.getInt(LlmIpc.KEY_STEPS, 0), data.getFloat(LlmIpc.KEY_CFG, 0f),
+                data.getLong(LlmIpc.KEY_SEED, -1L), out,
+                SdProgress { step, steps ->
+                    imageProgress(requestId, if (step >= steps && steps > 0) "decoding" else "sampling", step, steps)
+                },
+                seedOut,
+            )
+        } catch (t: Throwable) {
+            SdNative.ERR_GENERATE
+        } finally {
+            currentImage = NO_REQUEST
+        }
+        imageCancelled.remove(requestId)
+        when (rc) {
+            SdNative.OK -> reply(LlmIpc.MSG_IMAGE_DONE, requestId, Bundle().apply {
+                putString(LlmIpc.KEY_PATH, out)
+                putLong(LlmIpc.KEY_SEED, seedOut[0])
+                putLong(LlmIpc.KEY_MILLIS, System.currentTimeMillis() - started)
+            })
+            SdNative.ERR_CANCELLED -> imageError(requestId, "cancelled")
+            else -> {
+                File(out).delete()
+                imageError(requestId, "generate_failed")
+            }
+        }
+    }
+
     private fun replyError(requestId: Int, code: String, message: String) {
         reply(LlmIpc.MSG_ERROR, requestId, Bundle().apply {
             putString(LlmIpc.KEY_CODE, code)
@@ -234,6 +364,16 @@ class LlmService : Service() {
         fun estimateRequiredBytes(fileBytes: Long, nCtx: Int): Long {
             val perTokenKv = if (fileBytes > 1_500_000_000L) 120L * 1024 else 48L * 1024
             return fileBytes + perTokenKv * nCtx.coerceAtLeast(512) + HEADROOM_BYTES
+        }
+
+        /**
+         * Rough peak RSS for Stable Diffusion: weights + latent/UNet/VAE compute buffers, which
+         * grow with the pixel count (about 1 GB at 512x512 for SD 1.x/2.x on CPU).
+         */
+        fun estimateImageBytes(fileBytes: Long, width: Int, height: Int): Long {
+            val pixels = width.toLong().coerceAtLeast(64) * height.toLong().coerceAtLeast(64)
+            val compute = 1_000L * 1024 * 1024 * pixels / (512L * 512L)
+            return fileBytes + compute + HEADROOM_BYTES
         }
 
         fun hasGgufMagic(file: File): Boolean = try {

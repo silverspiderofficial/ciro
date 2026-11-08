@@ -78,8 +78,10 @@ void main() {
   });
 
   testWidgets('templates render to PNG at the export size', (tester) async {
-    final (studio, _, _, _) = await setup();
+    // All real I/O (temp dirs, prefs, PNG encoding) must run inside runAsync: testWidgets uses
+    // a fake clock, and real async work started outside it never completes.
     await tester.runAsync(() async {
+      final (studio, _, _, _) = await setup();
       for (final kind in TemplateKind.values) {
         final path = await studio.exportTemplate(TemplateData(
           kind: kind,

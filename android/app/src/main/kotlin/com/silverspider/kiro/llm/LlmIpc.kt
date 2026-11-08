@@ -8,6 +8,9 @@ object LlmIpc {
     const val MSG_GENERATE = 3
     const val MSG_CANCEL = 4
     const val MSG_STATUS = 5
+    const val MSG_IMAGE_GENERATE = 6
+    const val MSG_IMAGE_CANCEL = 7
+    const val MSG_IMAGE_UNLOAD = 8
 
     // service -> client
     const val MSG_LOADED = 101
@@ -16,6 +19,11 @@ object LlmIpc {
     const val MSG_DONE = 104
     const val MSG_ERROR = 105
     const val MSG_STATUS_REPLY = 106
+    const val MSG_IMAGE_PROGRESS = 110
+    const val MSG_IMAGE_DONE = 111
+    const val MSG_IMAGE_ERROR = 112
+    /** Sent when an image job unloaded the chat model (one heavy model at a time). */
+    const val MSG_CHAT_UNLOADED = 113
 
     const val KEY_PATH = "path"
     const val KEY_N_CTX = "nCtx"
@@ -37,4 +45,19 @@ object LlmIpc {
     const val KEY_AVAIL = "availBytes"
     const val KEY_NEED = "needBytes"
     const val KEY_LOADED = "loaded"
+
+    // image generation
+    const val KEY_PROMPT = "prompt"
+    const val KEY_NEGATIVE = "negative"
+    const val KEY_MODEL = "model"
+    const val KEY_TAESD = "taesd"
+    const val KEY_OUT = "out"
+    const val KEY_WIDTH = "width"
+    const val KEY_HEIGHT = "height"
+    const val KEY_STEPS = "steps"
+    const val KEY_CFG = "cfg"
+    const val KEY_SEED = "seed"
+    const val KEY_PHASE = "phase"
+    const val KEY_STEP = "step"
+    const val KEY_MILLIS = "millis"
 }

@@ -18,6 +18,8 @@ import com.silverspider.kiro.download.ModelDownloadService
 import com.silverspider.kiro.files.DocumentBridge
 import com.silverspider.kiro.llm.LlmClient
 import com.silverspider.kiro.security.SecurityChecks
+import com.silverspider.kiro.studio.StudioMedia
+import com.silverspider.kiro.studio.StudioWorkService
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -33,6 +35,9 @@ class MainActivity : FlutterFragmentActivity() {
 
     private var downloadSink: EventChannel.EventSink? = null
     private var llmSink: EventChannel.EventSink? = null
+    private var imageSink: EventChannel.EventSink? = null
+    private var pendingPickImage: MethodChannel.Result? = null
+    private var pendingPickDir: String = ""
 
     private var pendingImport: MethodChannel.Result? = null
     private var pendingTextOpen: MethodChannel.Result? = null
@@ -42,12 +47,14 @@ class MainActivity : FlutterFragmentActivity() {
     private lateinit var importLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var openTextLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var saveTextLauncher: ActivityResultLauncher<String>
+    private lateinit var pickImageLauncher: ActivityResultLauncher<String>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Activity result launchers must be registered before the activity is STARTED.
         importLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> onModelPicked(uri) }
         openTextLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> onTextPicked(uri) }
         saveTextLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri -> onTextTarget(uri) }
+        pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri -> onImagePicked(uri) }
         super.onCreate(savedInstanceState)
     }
 
@@ -115,12 +122,115 @@ class MainActivity : FlutterFragmentActivity() {
             }
         }
 
+        MethodChannel(messenger, "kiro/studio").setMethodCallHandler { call, result -> onStudioCall(call, result) }
+        MethodChannel(messenger, "kiro/image").setMethodCallHandler { call, result -> onImageCall(call, result) }
+        EventChannel(messenger, "kiro/image/events").setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                imageSink = events
+                LlmClient.imageSink = { event -> imageSink?.success(event) }
+            }
+
+            override fun onCancel(arguments: Any?) {
+                imageSink = null
+                LlmClient.imageSink = null
+            }
+        })
+
         LlmClient.bind(this)
+    }
+
+    private fun onStudioCall(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            when (call.method) {
+                "nativeLibDir" -> result.success(applicationInfo.nativeLibraryDir)
+                "battery" -> result.success(StudioMedia.battery(this))
+                "workStart" -> {
+                    StudioWorkService.start(this, call.argument<String>("title").orEmpty())
+                    result.success(null)
+                }
+                "workUpdate" -> {
+                    StudioWorkService.update(this, call.argument<String>("text").orEmpty(), call.argument<Int>("progress") ?: -1)
+                    result.success(null)
+                }
+                "workStop" -> {
+                    StudioWorkService.stop(this)
+                    result.success(null)
+                }
+                "saveToGallery" -> saveToGallery(call, result)
+                "pickImage" -> {
+                    if (pendingPickImage != null) return result.error("busy", null, null)
+                    pendingPickImage = result
+                    pendingPickDir = call.argument<String>("dir").orEmpty()
+                    pickImageLauncher.launch("image/*")
+                }
+                else -> result.notImplemented()
+            }
+        } catch (e: Exception) {
+            result.error("failed", null, null)
+        }
+    }
+
+    private fun saveToGallery(call: MethodCall, result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 4103)
+            return result.error("permission", null, null)
+        }
+        val path = call.argument<String>("path").orEmpty()
+        val video = call.argument<Boolean>("video") ?: false
+        val name = call.argument<String>("name").orEmpty()
+        io.execute {
+            try {
+                val where = StudioMedia.saveToGallery(this, path, video, name)
+                main.post { result.success(where) }
+            } catch (e: StudioMedia.MediaException) {
+                main.post { result.error(e.code, null, null) }
+            } catch (e: Exception) {
+                main.post { result.error("io", null, null) }
+            }
+        }
+    }
+
+    private fun onImagePicked(uri: Uri?) {
+        val result = pendingPickImage ?: return
+        pendingPickImage = null
+        val dir = pendingPickDir
+        if (uri == null) return result.success(null)
+        io.execute {
+            try {
+                val path = StudioMedia.importImage(this, uri, dir)
+                main.post { result.success(path) }
+            } catch (e: StudioMedia.MediaException) {
+                main.post { result.error(e.code, null, null) }
+            } catch (e: Exception) {
+                main.post { result.error("io", null, null) }
+            }
+        }
+    }
+
+    private fun onImageCall(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "generate" -> {
+                val id = call.argument<Int>("id") ?: 0
+                @Suppress("UNCHECKED_CAST")
+                val args = (call.arguments as? Map<String, Any?>).orEmpty()
+                LlmClient.generateImage(id, args)
+                result.success(true)
+            }
+            "cancel" -> {
+                LlmClient.cancelImage(call.argument<Int>("id") ?: 0)
+                result.success(null)
+            }
+            "unload" -> LlmClient.unloadImage { result.success(null) }
+            else -> result.notImplemented()
+        }
     }
 
     override fun onDestroy() {
         if (!isChangingConfigurations) {
             LlmClient.eventSink = null
+            LlmClient.imageSink = null
             ModelDownloadService.listener = null
         }
         io.shutdown()
@@ -174,6 +284,7 @@ class MainActivity : FlutterFragmentActivity() {
                     .putExtra(ModelDownloadService.EXTRA_SIZE, (call.argument<Number>("size") ?: -1).toLong())
                     .putExtra(ModelDownloadService.EXTRA_FILE, call.argument<String>("fileName"))
                     .putExtra(ModelDownloadService.EXTRA_TITLE, call.argument<String>("title"))
+                    .putExtra(ModelDownloadService.EXTRA_SUBDIR, call.argument<String>("subdir"))
                 ContextCompat.startForegroundService(this, intent)
                 result.success(true)
             }

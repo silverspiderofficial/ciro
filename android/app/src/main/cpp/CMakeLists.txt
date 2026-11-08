@@ -91,3 +91,39 @@ foreach(lib ${KIRO_RUNTIME_LIBS})
             VERBATIM)
     endif()
 endforeach()
+
+# ---------------------------------------------------------------------------
+# libkiro_sd.so: stable-diffusion.cpp image engine (native/kiro_sd), built as a separate CMake
+# project (ExternalProject) so its own ggml never clashes with llama.cpp's ggml targets.
+# CI builds it once in a cached step and drops it in src/main/jniLibs/<abi>/; when that
+# prebuilt file is present, Gradle packages it as is and this step is skipped.
+# KIRO_SD_JOBS limits parallel compile jobs (some sd.cpp sources need >3 GB RAM each).
+# ---------------------------------------------------------------------------
+option(KIRO_BUILD_SD "Build libkiro_sd.so (stable-diffusion.cpp)" ON)
+set(KIRO_SD_PREBUILT "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libkiro_sd.so")
+if(ANDROID AND KIRO_BUILD_SD AND NOT EXISTS "${KIRO_SD_PREBUILT}")
+    include(ExternalProject)
+    if(DEFINED ENV{KIRO_SD_JOBS})
+        set(KIRO_SD_JOBS "$ENV{KIRO_SD_JOBS}")
+    else()
+        set(KIRO_SD_JOBS 2)
+    endif()
+    set(KIRO_SD_BIN "${CMAKE_BINARY_DIR}/kiro_sd")
+    ExternalProject_Add(kiro_sd_ext
+        SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../native/kiro_sd"
+        BINARY_DIR "${KIRO_SD_BIN}"
+        CMAKE_ARGS
+            -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+            -DANDROID_ABI=${ANDROID_ABI}
+            -DANDROID_PLATFORM=${ANDROID_PLATFORM}
+            -DANDROID_STL=c++_shared
+            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+        BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target kiro_sd -j ${KIRO_SD_JOBS}
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS "${KIRO_SD_BIN}/libkiro_sd.so")
+    add_dependencies(kiro_llm kiro_sd_ext)
+    add_custom_command(TARGET kiro_llm POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${KIRO_SD_BIN}/libkiro_sd.so" $<TARGET_FILE_DIR:kiro_llm>/
+        VERBATIM)
+endif()

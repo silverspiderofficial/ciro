@@ -12,6 +12,16 @@
     public boolean onToken(byte[]);
 }
 
+# ---- JNI (libkiro_sd.so, stable-diffusion.cpp) ----
+-keep class com.silverspider.kiro.image.SdNative {
+    native <methods>;
+}
+# onStep(II)V is looked up from C++ with GetMethodID on the callback's runtime class.
+-keep interface com.silverspider.kiro.image.SdProgress { *; }
+-keep class * implements com.silverspider.kiro.image.SdProgress {
+    public void onStep(int, int);
+}
+
 # ---- Flutter ----
 # The embedding references optional Play Core deferred-components classes; Kiro has no
 # Google Play Services dependency, so silence the missing-class warnings only.

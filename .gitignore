@@ -60,3 +60,8 @@ build/symbols/
 *.gguf.part
 /android/app/.cxx/
 /third_party/
+
+# Prebuilt native binaries produced by CI (libkiro_sd.so, libkiro_ffmpeg.so)
+/android/app/src/main/jniLibs/
+.ffmpeg-build/
+/prebuilt/

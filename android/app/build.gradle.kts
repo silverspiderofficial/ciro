@@ -73,6 +73,15 @@ android {
         }
     }
 
+    androidResources {
+        // AAPT's default ignore list, plus the sherpa-onnx web build (WebAssembly runtime for
+        // browsers only; Android uses the native libsherpa-onnx library).
+        ignoreAssetsPatterns += listOf(
+            "!.svn", "!.git", "!.ds_store", "!*.scc", ".*", "<dir>_*", "!CVS", "!thumbs.db", "!picasa.ini", "!*~",
+            "!sherpa-onnx-wasm-web.wasm", "!sherpa-onnx-*.js",
+        )
+    }
+
     packaging {
         jniLibs {
             // ggml loads its CPU backend variants with dlopen() from nativeLibraryDir,

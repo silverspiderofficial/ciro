@@ -62,6 +62,7 @@ class ModelDownloadService : Service() {
                     size = intent.getLongExtra(EXTRA_SIZE, -1L),
                     fileName = intent.getStringExtra(EXTRA_FILE).orEmpty(),
                     title = intent.getStringExtra(EXTRA_TITLE).orEmpty(),
+                    subdir = intent.getStringExtra(EXTRA_SUBDIR).orEmpty(),
                 )
                 startInForeground(job.title)
                 if (job.id.isEmpty() || cancelFlags.containsKey(job.id)) {
@@ -70,7 +71,7 @@ class ModelDownloadService : Service() {
                 }
                 cancelFlags[job.id] = AtomicBoolean(false)
                 running++
-                emit(job.id, STATE_QUEUED, partSize(this, job.fileName), job.size, null)
+                emit(job.id, STATE_QUEUED, partSize(this, job.fileName, job.subdir), job.size, null)
                 executor.execute {
                     try {
                         run(job)
@@ -139,10 +140,11 @@ class ModelDownloadService : Service() {
 
     private fun run(job: Job) {
         val cancelFlag = cancelFlags[job.id] ?: return
-        val dir = modelsDir(this)
+        if (!isSafeSubdir(job.subdir)) return emit(job.id, STATE_ERROR, 0, job.size, "bad_request")
+        val dir = targetDir(this, job.subdir)
         val dest = File(dir, job.fileName)
         val part = File(dir, job.fileName + PART_SUFFIX)
-        if (!isSafeFileName(job.fileName) || !job.url.startsWith("https://")) {
+        if (!isSafeFileName(job.fileName) || !dir.isDirectory || !job.url.startsWith("https://")) {
             return emit(job.id, STATE_ERROR, 0, job.size, "bad_request")
         }
         if (dest.isFile && job.size > 0 && dest.length() == job.size) {
@@ -299,6 +301,7 @@ class ModelDownloadService : Service() {
         val size: Long,
         val fileName: String,
         val title: String,
+        val subdir: String,
     )
 
     private class CancelledException : IOException("cancelled")
@@ -313,6 +316,7 @@ class ModelDownloadService : Service() {
         const val EXTRA_SIZE = "size"
         const val EXTRA_FILE = "fileName"
         const val EXTRA_TITLE = "title"
+        const val EXTRA_SUBDIR = "subdir"
 
         const val STATE_QUEUED = "queued"
         const val STATE_RUNNING = "running"
@@ -349,7 +353,13 @@ class ModelDownloadService : Service() {
 
         fun modelsDir(context: Context): File = File(context.filesDir, "models").apply { mkdirs() }
 
-        fun partSize(context: Context, fileName: String): Long =
-            if (isSafeFileName(fileName)) File(modelsDir(context), fileName + PART_SUFFIX).length() else 0L
+        /** A subdirectory below models/ ("" = models/ itself): one plain name, no traversal. */
+        fun isSafeSubdir(name: String): Boolean = name.isEmpty() || isSafeFileName(name)
+
+        fun targetDir(context: Context, subdir: String): File =
+            if (subdir.isEmpty()) modelsDir(context) else File(modelsDir(context), subdir).apply { mkdirs() }
+
+        fun partSize(context: Context, fileName: String, subdir: String = ""): Long =
+            if (isSafeFileName(fileName) && isSafeSubdir(subdir)) File(targetDir(context, subdir), fileName + PART_SUFFIX).length() else 0L
     }
 }

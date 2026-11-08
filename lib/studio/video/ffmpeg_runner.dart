@@ -43,11 +43,11 @@ class FfmpegRunner {
     }
     _process = p;
     final errLines = <String>[];
-    final errSub = p.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((l) {
+    final errSub = p.stderr.transform(const Utf8Decoder(allowMalformed: true)).transform(const LineSplitter()).listen((l) {
       if (errLines.length > 40) errLines.removeAt(0);
       errLines.add(l);
     });
-    final outSub = p.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((l) {
+    final outSub = p.stdout.transform(const Utf8Decoder(allowMalformed: true)).transform(const LineSplitter()).listen((l) {
       final s = parseProgressSeconds(l);
       if (s != null && totalSeconds != null && totalSeconds > 0) {
         onProgress?.call((s / totalSeconds).clamp(0.0, 1.0));

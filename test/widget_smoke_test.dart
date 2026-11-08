@@ -6,6 +6,8 @@ import 'package:kiro/data/model_manager.dart';
 import 'package:kiro/data/repositories.dart';
 import 'package:kiro/data/secure_store.dart';
 import 'package:kiro/data/settings.dart';
+import 'package:kiro/features/studio/templates_tab.dart';
+import 'package:kiro/features/studio/video_tab.dart';
 import 'package:kiro/llm/local_backend.dart';
 import 'package:kiro/skills/skill_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,7 +39,8 @@ Future<AppServices> fakeServices({bool onboardingDone = true}) async {
 
 void main() {
   testWidgets('home shell shows the six Persian tabs and navigates', (tester) async {
-    final services = await fakeServices();
+    // Real I/O (temp dirs) only completes inside runAsync; testWidgets runs on a fake clock.
+    final services = (await tester.runAsync(() => fakeServices()))!;
     await tester.pumpWidget(KiroApp(services: services));
     await tester.pumpAndSettle();
 
@@ -58,11 +61,22 @@ void main() {
     }
     // No image model yet: the image tab offers the download and the templates.
     expect(find.text('مدل تصویر نصب نیست'), findsOneWidget);
-    await tester.tap(find.text('قالب‌ها').first);
+    await tester.tap(find.widgetWithText(Tab, 'قالب‌ها'));
     await tester.pumpAndSettle();
+    // The export button sits below the template editor: scroll the templates list to it.
+    final templatesList = find.descendant(of: find.byType(TemplatesTab), matching: find.byType(Scrollable)).first;
+    for (var i = 0; i < 12 && find.text('خروجی PNG').evaluate().isEmpty; i++) {
+      await tester.drag(templatesList, const Offset(0, -300));
+      await tester.pumpAndSettle();
+    }
     expect(find.text('خروجی PNG'), findsOneWidget);
-    await tester.tap(find.text('ویدیو').first);
+    await tester.tap(find.widgetWithText(Tab, 'ویدیو'));
     await tester.pumpAndSettle();
+    final videoList = find.descendant(of: find.byType(VideoTab), matching: find.byType(Scrollable)).first;
+    for (var i = 0; i < 12 && find.text('افزودن صحنه').evaluate().isEmpty; i++) {
+      await tester.drag(videoList, const Offset(0, -300));
+      await tester.pumpAndSettle();
+    }
     expect(find.text('افزودن صحنه'), findsOneWidget);
 
     await tester.tap(find.text('مهارت‌ها').last);
@@ -75,7 +89,8 @@ void main() {
   });
 
   testWidgets('first run shows the device check', (tester) async {
-    final services = await fakeServices(onboardingDone: false);
+    // Real I/O (temp dirs) only completes inside runAsync; testWidgets runs on a fake clock.
+    final services = (await tester.runAsync(() => fakeServices(onboardingDone: false)))!;
     await tester.pumpWidget(KiroApp(services: services));
     await tester.pumpAndSettle();
     expect(find.text('بررسی دستگاه'), findsOneWidget);
@@ -87,7 +102,8 @@ void main() {
   });
 
   testWidgets('switching to English flips direction', (tester) async {
-    final services = await fakeServices();
+    // Real I/O (temp dirs) only completes inside runAsync; testWidgets runs on a fake clock.
+    final services = (await tester.runAsync(() => fakeServices()))!;
     await services.settings.setLanguageCode('en');
     await tester.pumpWidget(KiroApp(services: services));
     await tester.pumpAndSettle();
@@ -96,7 +112,8 @@ void main() {
   });
 
   testWidgets('app lock covers the app until the PIN is entered', (tester) async {
-    final services = await fakeServices();
+    // Real I/O (temp dirs) only completes inside runAsync; testWidgets runs on a fake clock.
+    final services = (await tester.runAsync(() => fakeServices()))!;
     await services.secure.write(SecureStore.pinHash, PinHasher.hash('2468'));
     await services.settings.setLockEnabled(true);
     await tester.pumpWidget(KiroApp(services: services));

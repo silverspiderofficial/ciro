@@ -26,10 +26,14 @@ object LlmClient {
     private val queue = ArrayList<Message>()
     private val pendingCalls = HashMap<Int, (Map<String, Any?>) -> Unit>()
     private val activeGenerations = HashSet<Int>()
+    private val activeImages = HashSet<Int>()
     private var nextInternalId = 1_000_000
 
     /** Receives streaming events: token / done / error / connected / process_died. */
     var eventSink: ((Map<String, Any?>) -> Unit)? = null
+
+    /** Receives image events: progress / done / error, each with "id". */
+    var imageSink: ((Map<String, Any?>) -> Unit)? = null
 
     val isConnected: Boolean get() = service != null
 
@@ -113,6 +117,34 @@ object LlmClient {
         })
     }
 
+    fun generateImage(requestId: Int, args: Map<String, Any?>) {
+        activeImages.add(requestId)
+        send(LlmIpc.MSG_IMAGE_GENERATE, requestId, Bundle().apply {
+            putString(LlmIpc.KEY_PROMPT, args["prompt"] as? String ?: "")
+            putString(LlmIpc.KEY_NEGATIVE, args["negative"] as? String ?: "")
+            putString(LlmIpc.KEY_MODEL, args["model"] as? String ?: "")
+            putString(LlmIpc.KEY_TAESD, args["taesd"] as? String ?: "")
+            putString(LlmIpc.KEY_OUT, args["out"] as? String ?: "")
+            putInt(LlmIpc.KEY_WIDTH, (args["width"] as? Number)?.toInt() ?: 512)
+            putInt(LlmIpc.KEY_HEIGHT, (args["height"] as? Number)?.toInt() ?: 512)
+            putInt(LlmIpc.KEY_STEPS, (args["steps"] as? Number)?.toInt() ?: 0)
+            putFloat(LlmIpc.KEY_CFG, (args["cfg"] as? Number)?.toFloat() ?: 0f)
+            putLong(LlmIpc.KEY_SEED, (args["seed"] as? Number)?.toLong() ?: -1L)
+            putInt(LlmIpc.KEY_THREADS, (args["threads"] as? Number)?.toInt() ?: 4)
+            putBoolean(LlmIpc.KEY_FORCE, args["force"] as? Boolean ?: false)
+        })
+    }
+
+    fun cancelImage(requestId: Int) {
+        send(LlmIpc.MSG_IMAGE_CANCEL, requestId, Bundle())
+    }
+
+    fun unloadImage(done: (Map<String, Any?>) -> Unit) {
+        val id = nextInternalId++
+        pendingCalls[id] = done
+        send(LlmIpc.MSG_IMAGE_UNLOAD, id, Bundle())
+    }
+
     fun cancel(requestId: Int) {
         send(LlmIpc.MSG_CANCEL, requestId, Bundle())
     }
@@ -160,6 +192,34 @@ object LlmClient {
                     "generateMs" to stats.getOrElse(4) { 0.0 },
                 ))
             }
+            LlmIpc.MSG_IMAGE_PROGRESS -> emitImage(mapOf(
+                "event" to "progress",
+                "id" to id,
+                "phase" to data.getString(LlmIpc.KEY_PHASE),
+                "step" to data.getInt(LlmIpc.KEY_STEP),
+                "steps" to data.getInt(LlmIpc.KEY_STEPS),
+            ))
+            LlmIpc.MSG_IMAGE_DONE -> {
+                activeImages.remove(id)
+                emitImage(mapOf(
+                    "event" to "done",
+                    "id" to id,
+                    "path" to data.getString(LlmIpc.KEY_PATH),
+                    "seed" to data.getLong(LlmIpc.KEY_SEED),
+                    "millis" to data.getLong(LlmIpc.KEY_MILLIS),
+                ))
+            }
+            LlmIpc.MSG_IMAGE_ERROR -> {
+                activeImages.remove(id)
+                emitImage(mapOf(
+                    "event" to "error",
+                    "id" to id,
+                    "code" to data.getString(LlmIpc.KEY_CODE),
+                    "availBytes" to data.getLong(LlmIpc.KEY_AVAIL),
+                    "needBytes" to data.getLong(LlmIpc.KEY_NEED),
+                ))
+            }
+            LlmIpc.MSG_CHAT_UNLOADED -> emit(mapOf("event" to "unloaded_by_studio"))
             LlmIpc.MSG_LOADED -> complete(id, mapOf(
                 "ok" to true,
                 "path" to data.getString(LlmIpc.KEY_PATH),
@@ -201,6 +261,13 @@ object LlmClient {
         val gens = ArrayList(activeGenerations)
         activeGenerations.clear()
         gens.forEach { emit(mapOf("event" to "error", "id" to it, "code" to code, "message" to code)) }
+        val images = ArrayList(activeImages)
+        activeImages.clear()
+        images.forEach { emitImage(mapOf("event" to "error", "id" to it, "code" to code)) }
+    }
+
+    private fun emitImage(event: Map<String, Any?>) {
+        if (Looper.myLooper() == Looper.getMainLooper()) imageSink?.invoke(event) else main.post { imageSink?.invoke(event) }
     }
 
     private fun emit(event: Map<String, Any?>) {
