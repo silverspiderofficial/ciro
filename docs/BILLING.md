@@ -1,4 +1,4 @@
-# Billing: pay-per-video credits (TON)
+# Billing: pay-per-use credits (TON)
 
 A pure-Dart module (`lib/billing/`) for prepaid video credits paid in Toncoin. There are no
 accounts and no server. Payments are found on chain by their transfer comment, and the balance
@@ -146,6 +146,67 @@ On Linux, `flutter_secure_storage` needs `libsecret-1-dev` (build) and `libsecre
 - The recovery code is also kept in `billing/identity` in the app support directory, so a lost
   key-store entry does not change the payment id. Both files are app-private and excluded from
   backup (`allowBackup=false`).
+
+## v1.3: every paid feature, free first use, owner access
+
+All paid actions go through `PaidGate` (`lib/billing/paid_gate.dart`), shared by the Studio
+(`StudioService.gate`), the chat, the caption screen and the UI (`BillingController.gate`):
+
+1. **Owner unlocked** → free, nothing is reserved.
+2. **Billing unavailable** (could not be opened) → `BillingErrorCode.unavailable`; the UI shows
+   a friendly message. Model download and the model manager are not paid and keep working.
+3. **First use free** → a free reservation (`n: 0`, `free: true`, feature key `f`).
+4. Otherwise the feature's price is reserved. Commit on success, release on failure or cancel;
+   reservations left by a crash are released on the next start (as before).
+
+### Prices (`FeaturePricing`, all integer nanotons)
+
+| Feature (`PaidFeature.key`) | Price |
+|---|---|
+| `topic_video` | `PriceTable.standard()` tiers (10 s 0.3 … 10 min 8) |
+| `scenes_video` | same tiers by the estimated output length (reading-time estimate of the timeline) |
+| `editor_export` | ≤ 1 min 0.2, ≤ 5 min 0.5, ≤ 10 min 1, longer 1.5 |
+| `image` | 0.1 per image |
+| `ai_text` | 0.02 per generation: one chat reply, or one caption + hashtags run |
+
+Not charged: the editor preview (first 20 s, half size, watermarked), template cards, the
+image-prompt helper in the Image tab, model downloads.
+
+### Free first use
+
+- Once per feature per device / recovery code. Recorded twice: a ledger record (the committed
+  free reservation) and a device mark in the key store (`billing.v1.free_used.<feature>`), so
+  restoring another recovery code on the same device does not grant it again.
+- A failed, cancelled or crashed free use stays free. While a free use is reserved, a second
+  concurrent use is charged.
+- Lenient: a reinstall loses both records, and a damaged ledger is rebuilt from the chain without
+  its free-use records, so another free use may be granted. Accepted.
+
+### Owner access
+
+- One random 30-character owner code (Crockford base32, CSPRNG, shown as `XXXXXX-XXXXXX-…`).
+- The app holds only a salted PBKDF2-HMAC-SHA256 hash (16-byte random salt, 210 000
+  iterations, 32-byte output), XOR-masked (`lib/billing/owner_access.dart`). The code is not in
+  the repository, the app or CI.
+- Settings → Owner access: one field. The check runs in a background isolate
+  (`Isolate.run`), so the UI does not freeze (≈0.7 s on a desktop CPU, a few seconds on slow
+  phones).
+- On success, a device-bound token (HMAC-SHA256 of the hash under the billing master key) is
+  stored under `billing.v1.owner`; the code itself is never stored. The unlock survives
+  restarts. A copied token does not work on another device. After a reinstall, enter the code
+  again.
+- Rotate the code: `python3 tool/owner_code/new_owner_code.py <file outside the repo>` writes a
+  new code to that file (mode 600, never printed) and prints the new Dart constants to paste into
+  `owner_access.dart`. Anyone with root on their own phone can still patch the binary (see
+  Limits).
+
+### Pay sheet and settings (v1.3 UI)
+
+- One big "Pay with wallet" button opens the `ton://` link (then the https fallback) with the
+  amount and the comment already filled in. QR, comment and address are only under the
+  collapsed "Manual payment" section.
+- Settings: payment ID, recovery code and restore are under a collapsed "Advanced / backup"
+  section. Users never need to send any ID to anyone.
 
 ## Integration status (v1.2.0)
 
