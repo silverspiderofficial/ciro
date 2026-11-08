@@ -60,6 +60,7 @@ class ModelManager extends ChangeNotifier {
   Future<void> init() async {
     modelsDir = await _bridge.modelsDir();
     for (final id in await _bridge.activeDownloads()) {
+      if (id.startsWith('studio/')) continue;
       progress[id] = const DownloadProgress(state: 'running');
     }
     await refresh();
@@ -141,7 +142,8 @@ class ModelManager extends ChangeNotifier {
 
   void _onEvent(Map<Object?, Object?> e) {
     final id = e['id'] as String?;
-    if (id == null) return;
+    // Studio assets (image models, voices) are tracked by StudioAssetManager.
+    if (id == null || id.startsWith('studio/')) return;
     final pgs = DownloadProgress(
       state: (e['state'] as String?) ?? 'running',
       received: (e['received'] as num?)?.toInt() ?? 0,

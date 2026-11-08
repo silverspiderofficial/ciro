@@ -6,6 +6,7 @@ import '../../l10n/strings.dart';
 import '../chat/chat_screen.dart';
 import '../placeholder/coming_soon_screen.dart';
 import '../settings/settings_screen.dart';
+import '../studio/studio_screen.dart';
 import '../skills/skills_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -45,12 +46,7 @@ class _HomeShellState extends State<HomeShell> {
     final s = context.s;
     final pages = <Widget>[
       const ChatScreen(),
-      ComingSoonScreen(
-        title: s.t('tabStudio'),
-        icon: Icons.auto_awesome_outlined,
-        items: [s.t('studioSoon1'), s.t('studioSoon2'), s.t('studioSoon3')],
-        showAvailableTools: true,
-      ),
+      const StudioScreen(),
       ComingSoonScreen(
         title: s.t('tabQueue'),
         icon: Icons.view_agenda_outlined,

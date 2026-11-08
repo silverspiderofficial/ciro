@@ -10,13 +10,14 @@ import '../home/home_shell.dart';
 import '../lock/app_lock.dart';
 import '../models/model_manager_screen.dart';
 import '../onboarding/device_check_screen.dart';
+import '../studio/studio_assets_screen.dart';
 import 'api_settings_screen.dart';
 import 'privacy_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
-  static const appVersion = '1.0.0';
+  static const appVersion = '1.1.0';
 
   void _push(BuildContext context, Widget page) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
@@ -58,6 +59,12 @@ class SettingsScreen extends StatelessWidget {
             leading: const Icon(Icons.phone_android),
             title: Text(s.t('deviceCheck')),
             onTap: () => _push(context, const DeviceCheckScreen()),
+          ),
+          ListTile(
+            leading: const Icon(Icons.auto_awesome_outlined),
+            title: Text(s.t('studioAssets')),
+            subtitle: Text(s.t('heavyWorkTitle')),
+            onTap: () => _push(context, const StudioAssetsScreen()),
           ),
           _SliderTile(
             label: s.t('threads'),

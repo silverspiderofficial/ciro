@@ -131,6 +131,7 @@ class NativeBridge {
     required int size,
     required String fileName,
     required String title,
+    String? subdir,
   }) async {
     await _models.invokeMethod<bool>('download', {
       'id': id,
@@ -139,6 +140,7 @@ class NativeBridge {
       'size': size,
       'fileName': fileName,
       'title': title,
+      if (subdir != null) 'subdir': subdir,
     });
   }
 

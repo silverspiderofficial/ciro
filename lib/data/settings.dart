@@ -109,6 +109,22 @@ class SettingsController extends ChangeNotifier {
   String? get activeSkillId => _prefs.getString('activeSkillId');
   Future<void> setActiveSkillId(String? id) => _set('activeSkillId', id);
 
+  // ---- studio ----
+  /// Heavy work (image generation, video rendering) only while charging or above the battery level.
+  bool get heavyWorkPowerRule => _get('heavyWorkPowerRule', true);
+  Future<void> setHeavyWorkPowerRule(bool v) => _set('heavyWorkPowerRule', v);
+
+  int get heavyWorkMinBattery => _get('heavyWorkMinBattery', 50);
+  Future<void> setHeavyWorkMinBattery(int v) => _set('heavyWorkMinBattery', v.clamp(10, 90));
+
+  /// Id from imageModelCatalog.
+  String get imageModelId => _get('imageModelId', 'sd-turbo-q8');
+  Future<void> setImageModelId(String v) => _set('imageModelId', v);
+
+  /// Page handle printed on templates, e.g. "@my.page".
+  String get studioFooter => _get('studioFooter', '');
+  Future<void> setStudioFooter(String v) => _set('studioFooter', v.trim());
+
   // ---- app lock ----
   bool get lockEnabled => _get('lockEnabled', false);
   Future<void> setLockEnabled(bool v) => _set('lockEnabled', v);

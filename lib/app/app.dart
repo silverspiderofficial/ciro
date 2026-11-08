@@ -7,8 +7,11 @@ import '../data/settings.dart';
 import '../features/home/home_shell.dart';
 import '../features/lock/app_lock.dart';
 import '../features/onboarding/device_check_screen.dart';
+import '../features/studio/studio_common.dart';
 import '../llm/local_backend.dart';
 import '../skills/skill_repository.dart';
+import '../studio/studio_assets.dart';
+import '../studio/studio_service.dart';
 import 'services.dart';
 
 ThemeData buildTheme(Brightness brightness) {
@@ -39,6 +42,11 @@ class KiroApp extends StatelessWidget {
         ChangeNotifierProvider<AppLockController>(
           create: (_) => AppLockController(services.settings, services.secure),
         ),
+        if (services.studio != null) ...[
+          ChangeNotifierProvider<StudioService>.value(value: services.studio!),
+          ChangeNotifierProvider<StudioAssetManager>.value(value: services.studio!.assets),
+        ],
+        ChangeNotifierProvider<StudioUiState>(create: (_) => StudioUiState(languageCode: services.settings.languageCode)),
       ],
       child: Consumer<SettingsController>(
         builder: (context, settings, _) => MaterialApp(

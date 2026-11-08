@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../../agent/agent_engine.dart';
 import '../../agent/content_generator.dart';
 import '../../agent/tool_call_parser.dart';
+import '../../agent/studio_tools.dart';
 import '../../agent/tools.dart';
 import '../../app/services.dart';
 import '../../data/repositories.dart';
@@ -135,7 +136,7 @@ class ChatController extends ChangeNotifier {
     final contextChars = _services.settings.contextSize * 2;
     final engine = AgentEngine(
       backend: backend,
-      registry: ToolRegistry.standard(),
+      registry: ToolRegistry.standard(studio: _services.studio != null),
       options: options,
       maxSteps: _services.settings.agentMaxSteps,
       historyBudgetChars: backend.isRemote ? 24000 : (contextChars - options.maxTokens * 3).clamp(1200, 24000),
@@ -148,6 +149,7 @@ class ChatController extends ChangeNotifier {
       onSkillApplied: (skill) => _services.settings.setActiveSkillId(skill.id),
       language: _services.settings.languageCode,
       cancel: _cancel,
+      studio: _services.studio == null ? null : StudioToolsAdapter(_services.studio!),
     );
 
     try {

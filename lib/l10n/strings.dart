@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../data/settings.dart';
+import 'studio_strings.dart';
 
 /// App strings in Persian (default) and English. Keys are checked by test/l10n_test.dart.
 class S {
@@ -280,6 +281,7 @@ class S {
     'privacyHostCustom': 'فقط اگر API سازگار با OpenAI را فعال کنید: آدرسی که خودتان وارد می‌کنید',
     'licenses': 'مجوزها',
     'version': 'نسخه {version}',
+    ...studioFa,
   };
 
   static const Map<String, String> en = {
@@ -535,6 +537,7 @@ class S {
     'privacyHostCustom': 'Only if you enable an OpenAI-compatible API: the address you enter',
     'licenses': 'Licenses',
     'version': 'Version {version}',
+    ...studioEn,
   };
 
   /// Maps an LlmException / native error code to a message key.

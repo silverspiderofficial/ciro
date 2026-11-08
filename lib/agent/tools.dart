@@ -6,6 +6,7 @@ import '../llm/llm_backend.dart';
 import '../skills/skill.dart';
 import '../skills/skill_repository.dart';
 import 'content_generator.dart';
+import 'studio_tools.dart';
 import 'tool_call_parser.dart';
 
 /// Everything a tool may touch while it runs.
@@ -18,6 +19,7 @@ class ToolContext {
     required this.onSkillApplied,
     required this.language,
     this.cancel,
+    this.studio,
   });
 
   final ContentGenerator generator;
@@ -29,6 +31,12 @@ class ToolContext {
   /// UI language, used as the default content language.
   final String language;
   final CancelToken? cancel;
+
+  /// Image/video tools; null when the Studio is unavailable (tests, remote-only setups).
+  final StudioToolsHost? studio;
+
+  /// Images made during this agent run, in order (edit_video uses them as scenes).
+  final List<String> media = [];
 }
 
 class ToolResult {
@@ -191,12 +199,13 @@ class SaveToDraftsTool implements AgentTool {
 class ToolRegistry {
   ToolRegistry(List<AgentTool> tools) : _tools = {for (final t in tools) t.name: t};
 
-  factory ToolRegistry.standard() => ToolRegistry([
+  factory ToolRegistry.standard({bool studio = false}) => ToolRegistry([
         WriteTextTool(),
         WriteCaptionTool(),
         GenerateHashtagsTool(),
         ApplySkillTool(),
         SaveToDraftsTool(),
+        if (studio) ...[MakeImagePromptTool(), GenerateImageTool(), EditVideoTool()],
       ]);
 
   final Map<String, AgentTool> _tools;

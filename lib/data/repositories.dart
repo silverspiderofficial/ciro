@@ -73,6 +73,9 @@ class Draft {
     required this.content,
     this.caption = '',
     this.hashtags = '',
+    this.mediaPath,
+    this.mediaType,
+    this.extra,
     required this.createdAt,
   });
 
@@ -81,7 +84,31 @@ class Draft {
   final String content;
   final String caption;
   final String hashtags;
+
+  /// Image or video file kept in the app's private Studio folder.
+  final String? mediaPath;
+
+  /// image | video
+  final String? mediaType;
+
+  /// JSON payload to reopen the work (e.g. the video project).
+  final String? extra;
   final DateTime createdAt;
+
+  bool get isImage => mediaType == 'image' && mediaPath != null;
+  bool get isVideo => mediaType == 'video' && mediaPath != null;
+
+  Draft withId(int newId) => Draft(
+        id: newId,
+        title: title,
+        content: content,
+        caption: caption,
+        hashtags: hashtags,
+        mediaPath: mediaPath,
+        mediaType: mediaType,
+        extra: extra,
+        createdAt: createdAt,
+      );
 
   Map<String, Object?> toRow() => {
         if (id != null) 'id': id,
@@ -89,6 +116,9 @@ class Draft {
         'content': content,
         'caption': caption,
         'hashtags': hashtags,
+        'media_path': mediaPath,
+        'media_type': mediaType,
+        'extra': extra,
         'created_at': createdAt.millisecondsSinceEpoch,
       };
 
@@ -98,6 +128,9 @@ class Draft {
         content: (r['content'] as String?) ?? '',
         caption: (r['caption'] as String?) ?? '',
         hashtags: (r['hashtags'] as String?) ?? '',
+        mediaPath: r['media_path'] as String?,
+        mediaType: r['media_type'] as String?,
+        extra: r['extra'] as String?,
         createdAt: DateTime.fromMillisecondsSinceEpoch(r['created_at'] as int),
       );
 
@@ -135,7 +168,7 @@ class KiroDatabase implements ChatRepository, DraftsRepository {
     final dir = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dir, 'kiro.db'),
-      version: 1,
+      version: 2,
       onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, version) async {
         await db.execute('''
@@ -164,8 +197,19 @@ class KiroDatabase implements ChatRepository, DraftsRepository {
             content TEXT NOT NULL,
             caption TEXT NOT NULL DEFAULT '',
             hashtags TEXT NOT NULL DEFAULT '',
+            media_path TEXT,
+            media_type TEXT,
+            extra TEXT,
             created_at INTEGER NOT NULL
           )''');
+      },
+      onUpgrade: (db, from, to) async {
+        if (from < 2) {
+          // Stage 2: drafts can hold an image or a video (Studio).
+          await db.execute('ALTER TABLE drafts ADD COLUMN media_path TEXT');
+          await db.execute('ALTER TABLE drafts ADD COLUMN media_type TEXT');
+          await db.execute('ALTER TABLE drafts ADD COLUMN extra TEXT');
+        }
       },
     );
     return KiroDatabase._(db);
@@ -279,14 +323,7 @@ class MemoryRepository implements ChatRepository, DraftsRepository {
   @override
   Future<int> add(Draft d) async {
     final id = _next++;
-    _drafts.add(Draft(
-      id: id,
-      title: d.title,
-      content: d.content,
-      caption: d.caption,
-      hashtags: d.hashtags,
-      createdAt: d.createdAt,
-    ));
+    _drafts.add(d.withId(id));
     return id;
   }
 

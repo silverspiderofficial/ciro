@@ -2,7 +2,7 @@ name: kiro
 description: "کیرو — دستیار تولید محتوای اینستاگرام با هوش مصنوعی روی گوشی (آفلاین)."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.8.1
@@ -23,6 +23,11 @@ dependencies:
   http: ^1.6.0
   crypto: ^3.0.8
   intl: ^0.20.2
+  ffi: ^2.1.0
+  # Offline TTS (Piper voices). Pinned to the last 1.x release: 2.0 removed the espeak-ng
+  # phonemizer that Piper voices need.
+  sherpa_onnx: 1.13.8
+  video_player: ^2.10.0
 
 dev_dependencies:
   flutter_test:
@@ -41,3 +46,9 @@ flutter:
           weight: 700
   assets:
     - assets/fonts/OFL.txt
+    - assets/music/
+    - assets/licenses/
+    - assets/tts/
+    - assets/tts/espeak-ng-data/
+    - assets/tts/espeak-ng-data/lang/ira/
+    - assets/tts/espeak-ng-data/lang/gmw/

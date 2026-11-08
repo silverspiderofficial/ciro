@@ -33,6 +33,21 @@ class LocalEngine extends ChangeNotifier implements LlmBackend {
   /// True after the AI process died until a model is loaded again.
   bool processDied = false;
 
+  /// Reloads the active model when a generation finds the engine empty (for example after
+  /// the Studio ran an image model in the ":ai" process). Returns an error code or null.
+  Future<String?> Function()? autoReload;
+
+  /// The ":ai" process keeps one heavy model in memory: running an image model there unloads
+  /// the chat model.
+  void markUnloadedByStudio() {
+    if (state != EngineState.ready) return;
+    _set(() {
+      state = EngineState.idle;
+      loadedPath = null;
+      description = null;
+    });
+  }
+
   bool get isReady => state == EngineState.ready && loadedPath != null;
 
   @override
@@ -160,6 +175,9 @@ class LocalEngine extends ChangeNotifier implements LlmBackend {
     late final StreamController<String> controller;
     controller = StreamController<String>(
       onListen: () async {
+        if (!isReady && !processDied && autoReload != null && state != EngineState.loading) {
+          await autoReload!();
+        }
         if (!isReady) {
           _requests.remove(id);
           controller.addError(LlmException(processDied ? 'process_died' : 'not_loaded'));

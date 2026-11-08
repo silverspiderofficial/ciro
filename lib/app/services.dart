@@ -15,6 +15,11 @@ import '../llm/llm_backend.dart';
 import '../llm/local_backend.dart';
 import '../llm/remote_backend.dart';
 import '../skills/skill_repository.dart';
+import '../studio/image/image_engine.dart';
+import '../studio/platform/studio_platform.dart';
+import '../studio/studio_assets.dart';
+import '../studio/studio_service.dart';
+import '../studio/tts/tts_engine.dart';
 
 /// Integrity status shared with the UI; sensitive features check [apiAllowed].
 class SecurityState extends ChangeNotifier {
@@ -41,6 +46,7 @@ class AppServices {
     required this.engine,
     required this.models,
     required this.security,
+    this.studio,
   });
 
   final NativeBridge bridge;
@@ -52,6 +58,9 @@ class AppServices {
   final LocalEngine engine;
   final ModelManager models;
   final SecurityState security;
+
+  /// Image, template and video work (null only in tests that do not need it).
+  final StudioService? studio;
 
   static Future<AppServices> create() async {
     final bridge = NativeBridge();
@@ -65,6 +74,18 @@ class AppServices {
     final engine = LocalEngine(bridge);
     await engine.refreshStatus();
     final security = SecurityState()..update(await bridge.security());
+    final db2 = db;
+    final studio = StudioService(
+      platform: StudioPlatform.create(),
+      imageEngine: ImageEngine.create(),
+      tts: SherpaTtsEngine(),
+      assets: StudioAssetManager(Platform.isAndroid ? NativeAssetDownloader(bridge) : HttpAssetDownloader()),
+      settings: settings,
+      bridge: bridge,
+      drafts: db2,
+      onAiProcessUsed: engine.markUnloadedByStudio,
+    );
+    await studio.init();
     final services = AppServices(
       bridge: bridge,
       settings: settings,
@@ -75,7 +96,9 @@ class AppServices {
       engine: engine,
       models: models,
       security: security,
+      studio: studio,
     );
+    engine.autoReload = () => services.ensureModelLoaded();
     await services._tuneEngineOnce();
     return services;
   }

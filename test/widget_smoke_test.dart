@@ -11,6 +11,7 @@ import 'package:kiro/skills/skill_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fakes.dart';
+import 'studio_fakes.dart';
 
 Future<AppServices> fakeServices({bool onboardingDone = true}) async {
   SharedPreferences.setMockInitialValues({'onboardingDone': onboardingDone, 'languageCode': 'fa'});
@@ -19,6 +20,7 @@ Future<AppServices> fakeServices({bool onboardingDone = true}) async {
   final skills = SkillRepository(MemorySkillStorage());
   await skills.init();
   final repo = MemoryRepository();
+  final studio = await fakeStudio(settings: settings, bridge: bridge, drafts: repo);
   return AppServices(
     bridge: bridge,
     settings: settings,
@@ -29,6 +31,7 @@ Future<AppServices> fakeServices({bool onboardingDone = true}) async {
     engine: LocalEngine(bridge),
     models: ModelManager(bridge),
     security: SecurityState(),
+    studio: studio,
   );
 }
 
@@ -50,7 +53,17 @@ void main() {
 
     await tester.tap(find.text('استودیو').last);
     await tester.pumpAndSettle();
-    expect(find.text('در مرحلهٔ بعد'), findsWidgets);
+    for (final label in ['تصویر', 'قالب‌ها', 'ویدیو']) {
+      expect(find.text(label), findsWidgets, reason: label);
+    }
+    // No image model yet: the image tab offers the download and the templates.
+    expect(find.text('مدل تصویر نصب نیست'), findsOneWidget);
+    await tester.tap(find.text('قالب‌ها').first);
+    await tester.pumpAndSettle();
+    expect(find.text('خروجی PNG'), findsOneWidget);
+    await tester.tap(find.text('ویدیو').first);
+    await tester.pumpAndSettle();
+    expect(find.text('افزودن صحنه'), findsOneWidget);
 
     await tester.tap(find.text('مهارت‌ها').last);
     await tester.pumpAndSettle();
