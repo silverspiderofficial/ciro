@@ -162,4 +162,47 @@ void main() {
       expect(svc.balance.reserved, 0);
     });
   });
+  group("AI text through the user's own API key", () {
+    test('quote: free, no price, no charge; on-device stays 0.02', () async {
+      final (svc, _, _) = await _open();
+      await svc.restoreFromRecoveryCode(testRecovery);
+      final gate = PaidGate(billing: svc);
+      final own = gate.quoteAiText(ownApiKey: true);
+      expect(own.free, FreeReason.ownApiKey);
+      expect(own.charge, 0);
+      expect(own.listPrice, isNull);
+      expect(own.sold, isTrue);
+      expect(own.available, isTrue);
+      final local = gate.quoteAiText(ownApiKey: false);
+      expect(local.listPrice, ton('0.02'));
+      expect(local.free, FreeReason.firstUse);
+    });
+
+    test('begin: nothing reserved and first use not consumed', () async {
+      final (svc, _, _) = await _open();
+      await svc.restoreFromRecoveryCode(testRecovery);
+      final gate = PaidGate(billing: svc);
+      for (var i = 0; i < 3; i++) {
+        final c = (await gate.beginAiText(ownApiKey: true)).valueOrNull!;
+        expect(c.free, FreeReason.ownApiKey);
+        expect(c.reservation, isNull);
+        expect(c.nanotons, 0);
+        await gate.commit(c);
+      }
+      expect(svc.balance.spent, 0);
+      expect(svc.balance.reserved, 0);
+      expect(svc.isFirstUseFree(PaidFeature.aiText), isTrue);
+      final local = (await gate.beginAiText(ownApiKey: false)).valueOrNull!;
+      expect(local.free, FreeReason.firstUse);
+      expect(local.reservation, isNotNull);
+      await gate.release(local);
+    });
+
+    test('works even when billing is unavailable', () async {
+      final gate = PaidGate();
+      expect(gate.quoteAiText(ownApiKey: true).available, isTrue);
+      expect((await gate.beginAiText(ownApiKey: true)).valueOrNull?.free, FreeReason.ownApiKey);
+      expect((await gate.beginAiText(ownApiKey: false)).errorOrNull?.code, BillingErrorCode.unavailable);
+    });
+  });
 }

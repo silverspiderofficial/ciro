@@ -15,6 +15,7 @@ import 'pay_sheet.dart';
 /// "0.1 TON", "First use free" or "Free (owner)".
 String priceText(S s, FeatureQuote q) => switch (q.free) {
       FreeReason.owner => s.t('priceOwner'),
+      FreeReason.ownApiKey => '',
       FreeReason.firstUse => s.t('priceFirstFree'),
       FreeReason.none => q.listPrice == null
           ? s.t('priceNotSold')
@@ -34,6 +35,8 @@ class PriceLine extends StatelessWidget {
     if (!quote.available) {
       return Text(s.t('billErr_unavailable'), style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error));
     }
+    // AI text through the user's own API key is free: no price is shown.
+    if (quote.free == FreeReason.ownApiKey) return const SizedBox.shrink();
     final free = quote.free != FreeReason.none;
     return Row(
       mainAxisSize: MainAxisSize.min,

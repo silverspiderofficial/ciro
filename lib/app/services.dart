@@ -129,6 +129,13 @@ class AppServices {
   GenerationOptions get generationOptions =>
       GenerationOptions(maxTokens: settings.maxTokens, temperature: settings.temperature);
 
+  /// True when AI text would go through the user's own API key right now (free).
+  Future<bool> usesOwnApiKey() async {
+    if (!settings.useRemote || !security.apiAllowed) return false;
+    final key = await secure.read(SecureStore.apiKey);
+    return key != null && key.isNotEmpty;
+  }
+
   /// The backend the agent should use right now: the user's API when enabled, allowed and
   /// configured; otherwise the on-device engine.
   Future<LlmBackend> resolveBackend() async {

@@ -167,7 +167,16 @@ All paid actions go through `PaidGate` (`lib/billing/paid_gate.dart`), shared by
 | `scenes_video` | same tiers by the estimated output length (reading-time estimate of the timeline) |
 | `editor_export` | ≤ 1 min 0.2, ≤ 5 min 0.5, ≤ 10 min 1, longer 1.5 |
 | `image` | 0.1 per image |
-| `ai_text` | 0.02 per generation: one chat reply, or one caption + hashtags run |
+| `ai_text` | on-device model: 0.02 per generation (one chat reply, or one caption + hashtags run); through the user's own API key: free |
+
+### v1.3.1: AI text through the user's own API key is free
+
+When text goes through the user's own API key (`AppServices.resolveBackend()` returns a remote
+backend; `usesOwnApiKey()` for the UI), chat, caption, hashtag and idea generation is free:
+`PaidGate.beginAiText(ownApiKey: true)` returns a `PaidCharge` with `FreeReason.ownApiKey` and no
+reservation, so nothing is charged and the free first use is not consumed (it works even when
+billing is unavailable). `quoteAiText(ownApiKey: true)` has no price, and `PriceLine` shows
+nothing for it. Only on-device generation keeps the 0.02 TON price.
 
 Not charged: the editor preview (first 20 s, half size, watermarked), template cards, the
 image-prompt helper in the Image tab, model downloads.

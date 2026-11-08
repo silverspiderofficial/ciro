@@ -11,6 +11,7 @@ import '../billing/pay_sheet.dart';
 
 import '../../app/services.dart';
 import '../../data/repositories.dart';
+import '../../data/settings.dart';
 import '../../l10n/strings.dart';
 import '../../llm/local_backend.dart';
 import '../../skills/skill_repository.dart';
@@ -41,6 +42,19 @@ class _ChatView extends StatefulWidget {
 class _ChatViewState extends State<_ChatView> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
+  bool _ownKey = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _refreshOwnKey();
+  }
+
+  /// Whether replies go through the user's own API key (free, no price shown).
+  Future<void> _refreshOwnKey() async {
+    final own = await context.read<AppServices>().usesOwnApiKey();
+    if (mounted && own != _ownKey) setState(() => _ownKey = own);
+  }
 
   @override
   void dispose() {
@@ -54,6 +68,7 @@ class _ChatViewState extends State<_ChatView> {
     if (text.trim().isEmpty) return;
     _input.clear();
     final sent = await chat.send(text);
+    if (mounted) await _refreshOwnKey();
     // Not sent (e.g. not enough credit): give the text back so nothing is lost.
     if (!sent && mounted && _input.text.isEmpty) _input.text = text;
   }
@@ -66,6 +81,7 @@ class _ChatViewState extends State<_ChatView> {
     context.watch<SkillRepository>();
     final skill = chat.activeSkill;
     final billing = context.watch<BillingController>();
+    context.watch<SettingsController>();
 
     return Scaffold(
       appBar: AppBar(
@@ -130,7 +146,7 @@ class _ChatViewState extends State<_ChatView> {
                         label: Text(skill == null ? s.t('noSkill') : s.t('activeSkill', {'name': skill.name})),
                         onPressed: chat.running ? null : () => _pickSkill(context, chat),
                       ),
-                      PriceLine(quote: billing.quote(PaidFeature.aiText), labelKey: 'pricePerReply'),
+                      PriceLine(quote: billing.gate.quoteAiText(ownApiKey: _ownKey), labelKey: 'pricePerReply'),
                     ],
                   ),
                   const SizedBox(height: 4),

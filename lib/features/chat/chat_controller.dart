@@ -111,8 +111,9 @@ class ChatController extends ChangeNotifier {
       }
     }
 
-    // One paid AI text generation per reply (first use free; owner free). Never throws.
-    final BillingResult<PaidCharge> started = await _services.billing.gate.begin(PaidFeature.aiText);
+    // One paid AI text generation per on-device reply (first use free; owner free). Replies
+    // through the user's own API key are free. Never throws.
+    final BillingResult<PaidCharge> started = await _services.billing.gate.beginAiText(ownApiKey: backend.isRemote);
     final PaidCharge charge;
     switch (started) {
       case Ok(:final value):

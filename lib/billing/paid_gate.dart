@@ -9,7 +9,8 @@ import 'ledger.dart' show Reservation;
 import 'owner_access.dart';
 import 'paid_feature.dart';
 
-enum FreeReason { none, firstUse, owner }
+/// [ownApiKey]: AI text through the user's own API key is never charged and shows no price.
+enum FreeReason { none, firstUse, owner, ownApiKey }
 
 /// What one use of a feature costs right now.
 class FeatureQuote {
@@ -26,7 +27,7 @@ class FeatureQuote {
 
   /// What this use will take from the credit.
   int get charge => free == FreeReason.none ? (listPrice ?? 0) : 0;
-  bool get sold => free == FreeReason.owner || listPrice != null;
+  bool get sold => free == FreeReason.owner || free == FreeReason.ownApiKey || listPrice != null;
 }
 
 /// A started paid use. [reservation] is null for owner uses.
@@ -73,6 +74,16 @@ class PaidGate {
       available: true,
     );
   }
+
+  /// Quote for AI text. Through the user's own API key it is always free (no price, no first
+  /// use consumed); only on-device generation is priced.
+  FeatureQuote quoteAiText({required bool ownApiKey}) => ownApiKey
+      ? const FeatureQuote(feature: PaidFeature.aiText, listPrice: null, free: FreeReason.ownApiKey, available: true)
+      : quote(PaidFeature.aiText);
+
+  /// Starts one AI text generation. With [ownApiKey] nothing is reserved or recorded.
+  Future<BillingResult<PaidCharge>> beginAiText({required bool ownApiKey}) async =>
+      ownApiKey ? const Ok(PaidCharge(PaidFeature.aiText, FreeReason.ownApiKey, null)) : begin(PaidFeature.aiText);
 
   /// Starts a paid use. Errors: unavailable, insufficientFunds, unsupportedDuration, storage.
   Future<BillingResult<PaidCharge>> begin(PaidFeature f, {Duration? duration, int units = 1}) async {

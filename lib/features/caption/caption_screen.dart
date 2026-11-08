@@ -35,11 +35,24 @@ class _CaptionScreenState extends State<CaptionScreen> {
   String? _captionEn;
   List<List<String>> _sets = const [];
   String? _error;
+  bool _ownKey = false;
 
   @override
   void initState() {
     super.initState();
     _skillId = context.read<SettingsController>().activeSkillId;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _refreshOwnKey();
+  }
+
+  /// Whether text goes through the user's own API key (free, no price shown).
+  Future<void> _refreshOwnKey() async {
+    final own = await context.read<AppServices>().usesOwnApiKey();
+    if (mounted && own != _ownKey) setState(() => _ownKey = own);
   }
 
   @override
@@ -59,7 +72,9 @@ class _CaptionScreenState extends State<CaptionScreen> {
     final services = context.read<AppServices>();
     final skill = context.read<SkillRepository>().byId(_skillId);
     final billing = context.read<BillingController>();
-    if (!await prepareToPay(context, billing.quote(PaidFeature.aiText), confirm: false) || !mounted) return;
+    final backend = await services.resolveBackend();
+    if (!mounted) return;
+    if (!await prepareToPay(context, billing.gate.quoteAiText(ownApiKey: backend.isRemote), confirm: false) || !mounted) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -67,7 +82,6 @@ class _CaptionScreenState extends State<CaptionScreen> {
       _captionEn = null;
       _sets = const [];
     });
-    final backend = await services.resolveBackend();
     if (!backend.isRemote) {
       final err = await services.ensureModelLoaded();
       if (err != null) {
@@ -82,8 +96,9 @@ class _CaptionScreenState extends State<CaptionScreen> {
     }
     final cancel = _cancel = CancelToken();
     final gen = ContentGenerator(backend, options: services.generationOptions);
-    // One paid AI text generation per tap (first use free; owner free).
-    final started = await billing.gate.begin(PaidFeature.aiText);
+    // One paid AI text generation per on-device tap (first use free; owner free); free
+    // through the user's own API key.
+    final started = await billing.gate.beginAiText(ownApiKey: backend.isRemote);
     final PaidCharge charge;
     switch (started) {
       case Ok(:final value):
@@ -212,7 +227,7 @@ class _CaptionScreenState extends State<CaptionScreen> {
                   ],
                 ),
                 const SizedBox(height: 6),
-                Center(child: PriceLine(quote: context.watch<BillingController>().quote(PaidFeature.aiText), labelKey: 'pricePerGen')),
+                Center(child: PriceLine(quote: context.watch<BillingController>().gate.quoteAiText(ownApiKey: _ownKey), labelKey: 'pricePerGen')),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
