@@ -58,8 +58,7 @@ Import only `package:kiro/billing/billing.dart`.
 | 5 min | 4.5 | 30 |
 | 10 min | 8 | 60 |
 
-Prices are fixed in TON, not in fiat. For reference only, TON was about $1.06 on 2026-11-08
-(the figure supplied when this module was written; it was not re-checked here). A duration
+Prices are fixed in TON, not in fiat. A duration
 between two tiers is charged at the next tier up. Durations above 10 min are not sold.
 Clip count is `ceil(seconds / 10)`.
 
@@ -100,17 +99,14 @@ Do not poll it in a tight loop.
   and then the head is updated. A crash between the rename and the head update is recognized
   and accepted.
 - **On tamper** (any MAC or JSON failure, head mismatch, missing file while the head exists,
-  wrong key, or a removed tamper marker):
+  wrong key, or a removed tamper marker), and equally on accidental disk corruption:
   - The file is quarantined as `.tampered-<ts>`.
-  - A tamper marker is written to the key store.
-  - A new ledger is started.
-  - The next `refresh()` re-derives credits from the chain. Every credit at or before the tamper
-    point (by device time, and by the newest chain lt seen at the first scan afterwards) is
-    **forfeited**.
-  - Editing the file therefore never raises the spendable balance, and undoing spends causes
-    tamper detection. Payments made after the event are spendable as usual.
-  - Accidental disk corruption is treated the same way.
-- **Balance** = credited − committed spends − open reservations − forfeited.
+  - A tamper marker is written to the key store (informational; shown as a notice in Settings).
+  - A new ledger is started and the next `refresh()` rebuilds every credit from the chain.
+  - **Lenient by design:** nothing is forfeited and the user is never locked out. Only the local
+    spend history of the damaged file is lost, so its past spends are effectively refunded.
+    This is an accepted trade-off of the no-server design.
+- **Balance** = credited − committed spends − open reservations (`forfeited` is always 0).
 
 ## Limits (be explicit with users and maintainers)
 
@@ -119,8 +115,8 @@ Do not poll it in a tight loop.
   entries (indistinguishable from a fresh install); reinstalling the app and restoring the
   recovery code, which re-derives credits but not past spends; or using one recovery code on
   two devices at once, which lets both spend the same credit.
-- HMAC + platform key store + chain re-derivation makes casual edits fail and makes "undoing"
-  spends detectable. It is not DRM.
+- HMAC + platform key store + chain re-derivation makes casual edits fail. Because tamper
+  handling is lenient, deleting or corrupting the ledger resets past spends. It is not DRM.
 - The address mask only stops trivial search and replace. The SHA-256 check catches a swapped
   address unless the digest is patched too.
 - Release builds should use `--obfuscate --split-debug-info` and the existing Android
@@ -140,6 +136,25 @@ To add for the UI (not used by `lib/billing` itself):
 
 On Linux, `flutter_secure_storage` needs `libsecret-1-dev` (build) and `libsecret-1-0`
 (runtime). On Windows it uses DPAPI-protected storage.
+
+## Key store fallback and identity backup
+
+- The app's billing key store (`FallbackKeyStore` in `lib/features/billing/billing_controller.dart`)
+  uses `flutter_secure_storage`; if that throws (a broken keystore on some devices), it falls
+  back to a private file `billing/keys.json` in the app support directory instead of disabling
+  paid video.
+- The recovery code is also kept in `billing/identity` in the app support directory, so a lost
+  key-store entry does not change the payment id. Both files are app-private and excluded from
+  backup (`allowBackup=false`).
+
+## Integration status (v1.2.0)
+
+Done as described below: key store adapter and `BillingService.open` in `AppServices` (never
+throws; a null service disables paid video with a friendly message), `BillingController`
+(ChangeNotifier over `changes`), `StudioService.renderTopicVideo` (reserve once → one image and
+one ~10 s clip per segment → stream-copy concat → optional music mux → commit; release on any
+error or cancel; the power, model, topic and FFmpeg checks run before anything is reserved),
+the paid video card and pay sheet in the Video tab, and Settings → Credit & recovery.
 
 ## Integration steps
 

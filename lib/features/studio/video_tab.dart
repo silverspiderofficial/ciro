@@ -125,6 +125,7 @@ class VideoTab extends StatelessWidget {
               children: [
                 DropdownButtonFormField<NarratorVoice>(
                   value: project.voice,
+                  isExpanded: true,
                   decoration: InputDecoration(labelText: s.t('vidVoice')),
                   items: [
                     DropdownMenuItem(value: NarratorVoice.none, child: Text(s.t('voice_none'))),
@@ -142,11 +143,15 @@ class VideoTab extends StatelessWidget {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: project.musicTrackId,
+                  isExpanded: true,
                   decoration: InputDecoration(labelText: s.t('vidMusic')),
                   items: [
                     DropdownMenuItem(value: 'none', child: Text(s.t('music_none'))),
                     for (final m in musicCatalog)
-                      DropdownMenuItem(value: m.id, child: Text('${m.title} — ${s.isFa ? m.moodFa : m.moodEn}')),
+                      DropdownMenuItem(
+                        value: m.id,
+                        child: Text('${m.title} — ${s.isFa ? m.moodFa : m.moodEn}', overflow: TextOverflow.ellipsis),
+                      ),
                   ],
                   onChanged: (v) => ui.setProject(project.copyWith(musicTrackId: v)),
                 ),
