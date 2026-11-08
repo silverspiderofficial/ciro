@@ -1,0 +1,72 @@
+/// Result type used by the billing module. Nothing in the public billing API throws to the UI:
+/// every fallible call returns a [BillingResult].
+library;
+
+enum BillingErrorCode {
+  /// No network, DNS failure, timeout.
+  network,
+
+  /// The explorer API rate-limited us (HTTP 429) after all retries.
+  rateLimited,
+
+  /// The explorer API answered with something we could not parse.
+  badResponse,
+
+  /// Not enough credit for the requested duration.
+  insufficientFunds,
+
+  /// The local ledger failed its integrity check; spending of pre-existing credit is blocked.
+  tampered,
+
+  /// The built-in receive address failed its integrity check (patched binary).
+  addressIntegrity,
+
+  /// A recovery code that is malformed or has a bad check character.
+  invalidCode,
+
+  /// The duration is not sold (longer than the longest tier, or zero).
+  unsupportedDuration,
+
+  /// commit/release for a reservation id that is unknown or already settled.
+  unknownReservation,
+
+  /// Reading or writing the local ledger failed.
+  storage,
+}
+
+class BillingError {
+  const BillingError(this.code, [this.detail = '']);
+  final BillingErrorCode code;
+
+  /// Developer detail; never contains secrets. Not meant to be shown verbatim to users.
+  final String detail;
+
+  @override
+  String toString() => 'BillingError(${code.name}${detail.isEmpty ? '' : ': $detail'})';
+}
+
+sealed class BillingResult<T> {
+  const BillingResult();
+
+  bool get isOk => this is Ok<T>;
+
+  T? get valueOrNull => switch (this) {
+        Ok<T>(:final value) => value,
+        Err<T>() => null,
+      };
+
+  BillingError? get errorOrNull => switch (this) {
+        Ok<T>() => null,
+        Err<T>(:final error) => error,
+      };
+}
+
+final class Ok<T> extends BillingResult<T> {
+  const Ok(this.value);
+  final T value;
+}
+
+final class Err<T> extends BillingResult<T> {
+  const Err(this.error);
+  final BillingError error;
+}
